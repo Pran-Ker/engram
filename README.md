@@ -23,8 +23,9 @@ Tokens& hackathon at DG717, San Francisco.
 | **Nimble** | Real-time web search / page extraction API for agents | 1st $1,000 + 10k credits, 2nd $500 + 5k | Account + key done, 5,000 trial requests |
 | **Liquid AI** | Small LFM models that run locally on the laptop | Edge AI Kit (Orange Pi) + $250 | Running locally via Ollama |
 | **Black Forest Labs** | FLUX image + video generation API | $1,000 API credits per track (Image, Video, Action) | Account + key done, $100 sponsor credits loaded |
+| **Tinybird (RawTree)** | Schema-free analytics DB: POST JSON, tables auto-create, query with SQL | 1st $2,000, 2nd $1,000, 3rd $500 (Amazon gift cards) | Key done on the shared hackathon cluster, insert + query verified |
 
-Skipped: **Tinybird / RawTree** (private beta; the invite link https://tbrd.co/tokensand was failing for most people in Discord). Their prize pool is the biggest ($2k/$1k/$500) if someone gets in — go see them at the back.
+That's four. Tinybird has the biggest pool and RawTree fits the "agents that don't drown in their own history" theme well: log every agent step/tool call/test result as an event, then have the agent *query its own history* instead of carrying it in context.
 
 Not viable: **FLUX Action** track. It's an open-weights 7B robotics model, not an API, and needs a 32 GB Linux GPU. Stick to FLUX Image or FLUX Video.
 
@@ -36,7 +37,7 @@ Keys live in `~/.local/secrets` (never in this repo). Copy `hackathon/.env.examp
 cd hackathon
 npm install
 source ~/.local/secrets
-npm run check      # smoke-tests all three sponsors, ✅/❌ per line
+npm run check      # smoke-tests all four sponsors, ✅/❌ per line
 ```
 
 ### Nimble
@@ -73,6 +74,20 @@ const page = await nimble.extract.run({ url: "https://…", render: true, format
 - Image endpoints: `/flux-2-klein-4b` ($0.014, fast), `/flux-2-pro` ($0.03), `/flux-kontext-pro` (editing). Video: `POST /flux-3-video` with `mode: t2v|i2v|v2v`, `duration` 5–20s, `resolution: hd`, HD is $0.17/sec so a 5s clip ≈ $0.85.
 - Open question in Discord: whether `flux-2-pro` is enabled for new accounts. `klein-4b` confirmed working.
 - MCP: `claude mcp add --transport http FLUX https://mcp.bfl.ai` (OAuth via `/mcp`). Docs: https://docs.bfl.ai, full index https://docs.bfl.ai/llms.txt
+
+### Tinybird / RawTree
+
+- Access via the hackathon invite https://tbrd.co/tokensand (Google login). If it says "Forbidden", retry once or find bno (Tinybird) at the back. Console: https://rawtree.com/tokensand
+- **Shared cluster.** Every team is in org `tokensand`, cluster `long-horizon-agents-hack`, database `default`. Creating a database needs an admin key, which we deliberately don't hold. So: **prefix all our tables with `lh_`** and never drop tables you didn't create.
+- Env vars: `RAWTREE_API_KEY` (starts `rt_`), `RAWTREE_ORG=tokensand`, `RAWTREE_CLUSTER=long-horizon-agents-hack`. Keys: cluster → API keys → Create (read_write is enough).
+- CLI `rtree` (installed via `curl -fsSL https://rawtree.com/install.sh | bash`, lands in `~/.cargo/bin`):
+  ```bash
+  rtree insert --table lh_events --database default --data '[{"step":1,"action":"plan"}]'
+  rtree query --database default "SELECT action, count() FROM lh_events GROUP BY action"
+  ```
+- HTTP: `POST https://api.rawtree.com/v1/tables/<table>` with a JSON array body inserts (table auto-created, columns dynamic); `POST /v1/query` with `{"sql": "...", "format": "JSON"}`. Header `Authorization: Bearer $RAWTREE_API_KEY`, optional `x-rawtree-database`. SQL is ClickHouse dialect and read-only.
+- Node SDK `@rawtree/sdk` (installed): `new RawTree({ apiKey, database: "default" })` → `.insert({ table, values })` / `.query({ sql })`. No Python SDK; use `requests`.
+- MCP (registered in Claude Code): `claude mcp add --transport http rawtree https://mcp.rawtree.com/mcp --header "Authorization: Bearer $RAWTREE_API_KEY"`. Agent skills: `npx skills add rawtreedb/agent-skills`. Docs: https://rawtree.com/docs, OpenAPI https://api.rawtree.com/v1/openapi.json
 
 ## Discord
 
