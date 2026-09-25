@@ -1,4 +1,12 @@
-# Long Horizon Agents Hackathon — Sept 25, 2026
+# Engram
+
+A person you can stand in front of and talk to: their face, their voice, and their memories. Built at the Long Horizon Agents Hackathon (Sept 25, 2026) by Prannay Hebbar and Chinmay Hebbar.
+
+- [`engram/`](engram/README.md): the app. Hono API on :4100, Vite + React stage on :4173. Read [`engram/docs/CONTRACTS.md`](engram/docs/CONTRACTS.md) first.
+- [`voice/`](voice/README.md): fine-tuning Liquid's LFM2.5-Audio on Prannay's voice (record on the Mac, train and serve on Modal).
+- [`hackathon/`](hackathon/): sponsor smoke test (`npm run check`).
+
+## Hackathon notes: Long Horizon Agents Hackathon, Sept 25 2026
 
 Tokens& hackathon at DG717, San Francisco.
 
@@ -15,6 +23,13 @@ Tokens& hackathon at DG717, San Francisco.
 | Technical implementation | How well is the architecture built and implemented? |
 | Tool use | Did it effectively use at least 3 sponsor tools? |
 | Presentation | 3-minute live demo (not a slide deck). |
+
+## Project checklist
+
+- [x] Sponsor accounts, keys, `check.mjs` smoke test (Nimble, Liquid, BFL)
+- [x] **Voice personalization taken up**: fine-tune `LFM2.5-Audio-1.5B` on Prannay's voice — pipeline and status in [`voice/README.md`](voice/README.md)
+- [ ] Prannay records 45–90 min (`cd voice && make record`)
+- [ ] Train run `prannay-v1` on Modal and wire into Engram's `/tts`
 
 ## Sponsors we're using
 

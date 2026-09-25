@@ -1,0 +1,58 @@
+/* Design tokens. One neutral base, one accent. Dark stage theme only (this is shown on a projector). */
+:root {
+  --bg: #0b0b0c;          /* page */
+  --bg-1: #121214;        /* panels (drawer, context bank, bottom bar) */
+  --bg-2: #1a1a1d;        /* cards, inputs */
+  --line: #26262a;        /* hairlines */
+  --line-strong: #34343a;
+  --fg: #ececee;          /* primary text */
+  --fg-1: #a4a4ab;        /* secondary text */
+  --fg-2: #6b6b72;        /* tertiary / labels */
+  --accent: #ff6a3d;      /* the only accent: interactive + voice bar */
+  --accent-soft: rgba(255, 106, 61, 0.35);
+  --ok: #4fc38a;
+  --warn: #e8b23f;
+  --err: #e5544b;
+
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 16px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 400ms;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+
+/* Self-hosted fonts (latin subsets, variable weight) so the stage renders the same offline. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
