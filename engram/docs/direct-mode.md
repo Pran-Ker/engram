@@ -44,7 +44,9 @@ Response `201`:
 
 Open `http://localhost:4173/e/yaniv-markovski` and ask a question. The call is idempotent: posting the same person again rewrites the manifest, the direct-owned cards and the loops, and leaves `memory-*` cards and anything added by hand alone.
 
-### The record
+#The reference client is [`../../dashboard/`](../../dashboard/README.md): its **Talk to me** button builds exactly this request (`export_engram.py`) from a researched person and opens the stage.
+
+## The record
 
 Any JSON object with a name. Field names follow the [longhorizonhack](https://github.com/cheese-cracker/longhorizonhack) `people.csv` columns so a row can be posted as is; the short aliases on the left work too.
 

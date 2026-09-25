@@ -5,6 +5,7 @@ A person you can stand in front of and talk to: their face, their voice, and the
 - [`engram/`](engram/README.md): the app. Hono API on :4100, Vite + React stage on :4173. Read [`engram/docs/CONTRACTS.md`](engram/docs/CONTRACTS.md) first.
 - [`voice/`](voice/README.md): fine-tuning Liquid's LFM2.5-Audio on Prannay's voice (record on the Mac, train and serve on Modal).
 - [`hackathon/`](hackathon/): sponsor smoke test (`npm run check`).
+- [`dashboard/`](dashboard/README.md): the direct-mode front door. Type a name and a profile link (plus a photo), Nimble researches the person, FLUX 3 renders a talking clip, and one click posts the result to `POST /api/direct/engrams` so the person appears on the stage. Python, stdlib server on :8765.
 
 ## Hackathon notes: Long Horizon Agents Hackathon, Sept 25 2026
 
