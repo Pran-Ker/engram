@@ -1,0 +1,8 @@
+.env
+data/*.csv
+data/raw/
+images/
+videos/
+__pycache__/
+.snapshots/
+.crawls/
