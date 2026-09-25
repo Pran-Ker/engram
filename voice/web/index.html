@@ -359,6 +359,10 @@ registerProcessor('cap',Cap);`;
 
 async function initAudio() {
   document.body.classList.remove('micerr'); el.micError.hidden = true;
+  // tear down a previous graph (Retry, or the system default input changed) so two graphs never feed onChunk
+  if (A.stream) { try { A.stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); } catch (e) {} A.stream = null; }
+  if (A.ctx) { try { A.ctx.close(); } catch (e) {} A.ctx = null; }
+  A.ready = false;
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
@@ -412,6 +416,26 @@ function showMicError(e) {
   renderTop();
 }
 el.micRetry.addEventListener('click', () => { el.micRetry.blur(); initAudio(); });
+
+// Follow the system default input automatically (AirPods connect, USB mic plugged in). Chrome fires
+// devicechange; we re-open the default device once idle, and the top strip shows the new mic name.
+let deviceChangeTimer = null;
+if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    clearTimeout(deviceChangeTimer);
+    deviceChangeTimer = setTimeout(async () => {
+      if (A.recording) return;                       // never swap devices mid-take
+      let label = null;
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const def = devs.find(d => d.kind === 'audioinput' && d.deviceId === 'default');
+        label = def ? def.label.replace(/^Default - /, '') : null;
+      } catch (e) {}
+      if (label && A.micName && label === A.micName) return;   // default did not actually change
+      initAudio();
+    }, 600);
+  });
+}
 
 function onChunk(c) {
   let peak = 0, sum = 0;
