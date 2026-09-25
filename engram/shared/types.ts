@@ -16,9 +16,11 @@ export type EngramManifest = {
     poster: string          // "video/poster.jpg" (first frame, shown before video loads)
   }
   brain: {
-    model: string           // Ollama tag, e.g. "hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M"
+    model: string           // Ollama tag, e.g. "hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M"; an OpenRouter id when provider is "openrouter"
     persona: string         // one paragraph: who is speaking and how, prepended to the context bank
+    provider?: 'ollama' | 'openrouter'   // default ollama. Direct mode uses openrouter (docs/direct-mode.md)
   }
+  mode?: 'hyper' | 'direct' // default hyper: the hand-built path with a fine-tuned voice. direct: written by POST /api/direct/engrams
 }
 
 export type EngramSummary = Pick<EngramManifest, 'slug' | 'name' | 'tagline'> & {

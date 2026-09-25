@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { loadManifest } from '../lib/engram-store.ts'
 import { sortedCards, writeCard } from '../lib/cards.ts'
 import { streamChat, DEFAULT_MODEL, warmModel } from '../lib/liquid.ts'
+import { streamChat as streamOpenRouter } from '../lib/direct/openrouter.ts'
 import { buildTurn, pickCards, stripMarkdown, tokenize } from '../lib/prompt.ts'
 import { searchWeb, type WebResult } from '../lib/nimble.ts'
 import { logEvent } from '../lib/rawtree.ts'
@@ -34,6 +35,7 @@ chat.post('/:slug/chat', async (c) => {
   const cards = sortedCards(slug)
   const wantsWeb = needsWeb(question, cards, manifest.name)
   const model = manifest.brain.model || DEFAULT_MODEL
+  const brain = manifest.brain.provider === 'openrouter' ? streamOpenRouter : streamChat  // direct engrams answer via OpenRouter
   logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'user_utterance', chars: question.length, text: question })
 
   return streamSSE(c, async (stream) => {
@@ -63,7 +65,7 @@ chat.post('/:slug/chat', async (c) => {
     const abort = new AbortController()
     c.req.raw.signal.addEventListener('abort', () => abort.abort())
     try {
-      for await (const raw of streamChat(model, turn, abort.signal)) {
+      for await (const raw of brain(model, turn, abort.signal)) {
         const token = raw.replace(/[*#`]/g, '').replace(/\s*[—–]\s*|\s+-\s+/g, ', ').replace(/\n+/g, ' ')
         if (!token) continue
         if (!firstTokenAt) {
