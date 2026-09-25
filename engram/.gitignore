@@ -12,3 +12,6 @@ engrams/*/video/*.mp4
 engrams/*/video/*.jpg
 .snapshots/
 .crawls/
+
+# runtime output: memory cards written by /chat
+engrams/*/context/memory-*.md
