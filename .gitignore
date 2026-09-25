@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.snapshots/
+.crawls/
+.DS_Store
+*.log
