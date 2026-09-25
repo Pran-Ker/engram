@@ -2,6 +2,7 @@ import { existsSync, readdirSync, mkdirSync, copyFileSync, writeFileSync } from 
 import { join, resolve, basename } from 'node:path'
 import { b64, generate, VIDEO_USD_PER_S } from './bfl.ts'
 import { probe, pingPong, crossfadeLoop, stillToIdle, frame, poster, psnr } from './ffmpeg.ts'
+import { measureDrift, scaleCheck, trend } from './drift.ts'
 
 const args = process.argv.slice(2)
 const slug = args.find((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWith('--')) ?? 'prannay'
@@ -19,6 +20,7 @@ const resolution = flag('resolution', 'fhd')
 const size = resolution === 'hd' ? '1280x720' : '1920x1080'
 const loopMode = flag('loop', 'pingpong')
 const black = Number(flag('black', '20'))
+const grey = Number(flag('grey', '14'))
 
 const dir = resolve('engrams', slug)
 const photos = join(dir, 'photos')
@@ -40,7 +42,7 @@ const PORTRAIT_PROMPT = [
 
 const IDLE_PROMPT = 'The man stays still and listens attentively. Subtle natural idle motion only: gentle breathing, one or two slow blinks, tiny head movements, calm attentive expression, eyes on the camera. Static camera, no zoom, no pan, no hands, no lighting change, background stays a plain dark studio. Seamless, understated, photoreal.'
 
-const TALK_PROMPT = 'The man is mid-conversation, visibly talking to the camera the entire time: his lips clearly open and close on every word, jaw moving, animated expressive speech with natural pauses, small nods, eyebrows rising as he makes a point, warm confident energy. He stays centered, framing does not change. Static camera, no zoom, no pan, no hands entering the frame, no lighting change, background stays a plain dark studio. Photoreal.'
+const TALK_PROMPT = 'Locked-off tripod shot, fixed focal length: no zoom, no dolly, no push-in, no pan, no drift, no camera movement of any kind. The subject stays exactly the same size and position in frame from the first frame to the last frame; his head stays centered and his shoulders stay on the same line. The man is mid-conversation, visibly talking to the camera the entire time: his lips clearly open and close on every word, jaw moving, animated expressive speech with natural pauses, slight nods, eyebrows rising as he makes a point, warm confident energy. No hands entering the frame, no lighting change, background stays a plain dark studio. Photoreal.'
 
 function refs() {
   return readdirSync(photos).filter((f) => /\.jpe?g$/i.test(f) && !f.startsWith('08')).sort().map((f) => join(photos, f))
@@ -100,20 +102,22 @@ async function clip(kind: 'idle' | 'talk', src: string, tag: string) {
 function loops(idleRaw: string | null, talkRaw: string | null, still: string) {
   const idle = join(video, 'idle.mp4')
   const talk = join(video, 'talk.mp4')
-  const make = (src: string, out: string) => (loopMode === 'xfade' ? crossfadeLoop(src, out, size, black) : pingPong(src, out, size, black))
+  const make = (src: string, out: string) => (loopMode === 'xfade' ? crossfadeLoop(src, out, size, black, grey) : pingPong(src, out, size, black, grey))
   if (idleRaw) make(idleRaw, idle)
-  else stillToIdle(still, idle, size, black)
+  else stillToIdle(still, idle, size, black, grey)
   if (talkRaw) make(talkRaw, talk)
   else copyFileSync(idle, talk)
   poster(idle, join(video, 'poster.jpg'))
   for (const f of ['idle.mp4', 'talk.mp4', 'poster.jpg']) copyFileSync(join(video, f), join(review, f))
-  return verify(idle, talk)
+  return verify(idle, talk, [idleRaw, talkRaw])
 }
 
-function verify(idle: string, talk: string) {
+function verify(idle: string, talk: string, raws: (string | null)[]) {
   const a = probe(idle)
   const b = probe(talk)
   const report: Record<string, unknown> = { idle: a, talk: b, sizeMatch: a.width === b.width && a.height === b.height }
+  report.scaleCheck = scaleCheck(join(review, 'scale-check.jpg'), [idle, talk])
+  report.rawDrift = Object.fromEntries(raws.filter((r): r is string => !!r).map((r) => [basename(r), trend(measureDrift(r))]))
   for (const [name, p] of [['idle', idle], ['talk', talk]] as const) {
     const first = join(work, `${name}-first.jpg`)
     const last = join(work, `${name}-last.jpg`)

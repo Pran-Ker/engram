@@ -3,11 +3,12 @@ import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
 import { loadManifest } from '../lib/engram-store.ts'
 import { sortedCards, writeCard } from '../lib/cards.ts'
-import { streamChat, DEFAULT_MODEL, warmModel } from '../lib/liquid.ts'
+import { streamChat, DEFAULT_MODEL, warmModel, type OllamaStats } from '../lib/liquid.ts'
 import { streamChat as streamOpenRouter } from '../lib/direct/openrouter.ts'
 import { buildTurn, pickCards, stripMarkdown, tokenize } from '../lib/prompt.ts'
 import { searchWeb, type WebResult } from '../lib/nimble.ts'
 import { logEvent } from '../lib/rawtree.ts'
+import { writeLiveCards } from './context.ts'
 import type { ChatEvent, ChatMessage, ContextCard } from '../../shared/types.ts'
 
 export const chat = new Hono()
@@ -15,9 +16,15 @@ export const chat = new Hono()
 const MIN_SENTENCE = 12
 const MAX_SENTENCES = 3
 const FILLERS = ['Give me a second, let me look that up.', 'Hang on, let me check.', 'One sec, pulling that up.']
+const SECOND_FILLER = 'Pulling it up now.'
+const SECOND_FILLER_AFTER_MS = 1800
 const MEMORY_LINES = 12
+const MIN_UTTERANCE = 12
+const TITLE_WORDS = 5
+const THROWAWAY_SESSIONS = /^(test|curl|bench)/i
+const MEMORY_ON = process.env.ENGRAM_MEMORY !== 'off'   // ENGRAM_MEMORY=off: never write memory cards (demo safety)
 const WEB_TIMEOUT_MS = 6000
-const SENTENCE_END = /[.!?]["')\]]*(?=\s|$)/g
+const SENTENCE_END = /(?<!\b[A-Z])[.!?]["')\]]*(?=\s|$)/g
 const WEB_TRIGGERS = /\b(today|tonight|yesterday|tomorrow|latest|news|recent(ly)?|this (week|month|year|morning)|hackathon|weather|forecast|stock|price|score|happening|announced|released|launched|update|schedule|agenda|202[6-9])\b/i
 
 chat.post('/:slug/chat', async (c) => {
@@ -48,6 +55,7 @@ chat.post('/:slug/chat', async (c) => {
     }
     let firstTokenAt = 0
     let live: WebResult | undefined
+    let stats: OllamaStats = {}
 
     if (wantsWeb) {
       await send({ type: 'context', cards: pickCards(cards, question, [memoryId(sessionId)]).map((c) => c.id), live: { query: question, urls: [] } })
@@ -56,8 +64,15 @@ chat.post('/:slug/chat', async (c) => {
       await say(filler)
       const rich = searchWeb(question, 3, true, WEB_TIMEOUT_MS).catch(() => undefined)
       const fast = searchWeb(question, 3, false, WEB_TIMEOUT_MS).catch(() => undefined)
-      live = (await rich) ?? (await fast)
+      const search = rich.then((r) => r ?? fast)
+      const slow = await Promise.race([search.then(() => false), delay(SECOND_FILLER_AFTER_MS).then(() => true)])
+      if (slow) {
+        await send({ type: 'token', text: `${SECOND_FILLER} ` })
+        await say(SECOND_FILLER)
+      }
+      live = await search
       if (live) logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'context_web', ms: Date.now() - started, chars: live.hits.length, text: live.query, meta: { urls: live.hits.map((h) => h.url) } })
+      if (live) try { writeLiveCards(slug, manifest.name, question, live) } catch {}
     }
     const { messages: turn, used } = buildTurn(manifest, cards, messages, question, live, [memoryId(sessionId)])
     await send({ type: 'context', cards: used, live: live && { query: live.query, urls: live.hits.map((h) => h.url) } })
@@ -65,7 +80,8 @@ chat.post('/:slug/chat', async (c) => {
     const abort = new AbortController()
     c.req.raw.signal.addEventListener('abort', () => abort.abort())
     try {
-      for await (const raw of brain(model, turn, abort.signal)) {
+      const stream = brain === streamChat ? streamChat(model, turn, abort.signal, (s) => { stats = s }) : brain(model, turn, abort.signal)
+      for await (const raw of stream) {
         const token = raw.replace(/[*#`]/g, '').replace(/\s*[—–]\s*|\s+-\s+/g, ', ').replace(/\n+/g, ' ')
         if (!token) continue
         if (!firstTokenAt) {
@@ -84,9 +100,11 @@ chat.post('/:slug/chat', async (c) => {
 
     const text = spoken.join(' ')
     const latencyMs = Date.now() - started
+    const firstTokenMs = firstTokenAt ? firstTokenAt - started : null
     await send({ type: 'done', turnId, text, latencyMs })
-    logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_done', ms: latencyMs, chars: text.length, provider: model, text, meta: { cards: used, firstTokenMs: firstTokenAt ? firstTokenAt - started : null, sentences: spoken.length, web: live?.query ?? null } })
-    if (text) setImmediate(() => saveMemory(slug, sessionId, messages, text))
+    console.log(`[chat] first token ${firstTokenMs ?? '-'}ms, prompt ${stats.promptTokens ?? '-'} tok in ${stats.promptEvalMs ?? '-'}ms, ${stats.evalTokens ?? '-'} tok out in ${stats.evalMs ?? '-'}ms, total ${latencyMs}ms${live ? ', web' : ''}`)
+    logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_done', ms: latencyMs, chars: text.length, provider: model, text, meta: { cards: used, firstTokenMs, sentences: spoken.length, web: live?.query ?? null, ...stats } })
+    if (text && MEMORY_ON) setImmediate(() => saveMemory(slug, sessionId, messages, text, cards, used))
   })
 })
 
@@ -130,27 +148,49 @@ function needsWeb(question: string, cards: ContextCard[], selfName: string) {
   return terms.some((t) => !known.has(t))
 }
 
-function saveMemory(slug: string, sessionId: string, messages: ChatMessage[], answer: string) {
-  const exchanges: string[] = []
+function saveMemory(slug: string, sessionId: string, messages: ChatMessage[], answer: string, cards: ContextCard[], used: string[]) {
+  if (THROWAWAY_SESSIONS.test(sessionId)) return
+  const grounded = cards.some((c) => used.includes(c.id) && c.section !== 'memory' && c.section !== 'voice')
+  if (!grounded || !mentionsProperNoun(answer, cards)) return
   const history = [...messages, { role: 'assistant' as const, content: answer }]
-  for (let i = 0; i < history.length; i++) {
-    if (history[i].role !== 'user') continue
-    const reply = history[i + 1]?.role === 'assistant' ? history[i + 1].content : ''
-    exchanges.push(`- Asked "${oneLine(history[i].content, 90)}" and I said: ${wholeSentences(reply, 240)}`)
-  }
+  const exchanges = history.flatMap((m, i) => {
+    const reply = history[i + 1]?.role === 'assistant' ? withoutFiller(history[i + 1].content) : ''
+    return m.role === 'user' && isRealUtterance(m.content) && reply ? [{ question: m.content, reply }] : []
+  })
+  if (!exchanges.length) return
   const date = new Date().toISOString().slice(0, 10)
-  const title = `Conversation on ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   try {
     writeCard(slug, memoryId(sessionId), {
       section: 'memory',
-      title,
+      title: topicTitle(exchanges[0].question),
       source: `conversation ${date}`,
-      body: exchanges.slice(-MEMORY_LINES).join('\n'),
+      body: exchanges
+        .slice(-MEMORY_LINES)
+        .map(({ question, reply }) => `- Asked "${oneLine(question, 90)}" and I said: ${wholeSentences(reply, 240)}`)
+        .join('\n'),
     })
   } catch {}
 }
 
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const PROPER_NOUN = /\b[A-Z][a-zA-Z0-9]{2,}\b/g
+
+function mentionsProperNoun(answer: string, cards: ContextCard[]) {
+  const known = new Set(cards.flatMap((c) => `${c.title} ${c.body}`.match(PROPER_NOUN) ?? []))
+  const midSentence = answer.replace(/(^|[.!?]["')\]]*\s+)[A-Z][a-zA-Z0-9]*/g, '$1')
+  return (midSentence.match(PROPER_NOUN) ?? []).some((w) => known.has(w))
+}
+
 const memoryId = (sessionId: string) => `memory-${sessionId.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40)}`
+
+const isRealUtterance = (s: string) => s.trim().length >= MIN_UTTERANCE && /[a-z]/i.test(s)
+
+const withoutFiller = (s: string) =>
+  FILLERS.reduce((out, filler) => out.split(filler).join(' '), s).replace(/\s+/g, ' ').trim()
+
+const topicTitle = (question: string) =>
+  question.replace(/\s+/g, ' ').trim().split(' ').slice(0, TITLE_WORDS).join(' ').replace(/[\s?!.,;:"']+$/, '')
 
 const oneLine = (s: string, max: number) => {
   const flat = s.replace(/\s+/g, ' ').trim()

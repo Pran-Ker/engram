@@ -66,7 +66,7 @@ const flatten = (row: StoredRow): FlatRow =>
 export async function queryEvents(filter: { engram?: string; since?: string; limit?: number }): Promise<EventRow[]> {
   const where = [
     filter.engram && `engram = ${quote(filter.engram)}`,
-    filter.since && `ts > ${quote(filter.since)}`,
+    filter.since && `parseDateTime64BestEffort(toString(ts), 3) > parseDateTime64BestEffort(${quote(filter.since)}, 3)`,
   ].filter(Boolean)
   const limit = Math.min(Math.max(Number(filter.limit) || 200, 1), 2000)
   const sql = `SELECT * FROM ${TABLE}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ts DESC LIMIT ${limit}`
@@ -74,10 +74,10 @@ export async function queryEvents(filter: { engram?: string; since?: string; lim
   return r.data.map(unflatten)
 }
 
-const unflatten = (row: StoredRow): EventRow => ({
-  ...row,
+const unflatten = ({ meta, ...row }: StoredRow): EventRow => ({
+  ...(Object.fromEntries(Object.entries(row).filter(([, v]) => v != null)) as Omit<EventRow, 'meta'>),
   ts: isoDate(row.ts),
-  meta: parseMeta(row.meta),
+  ...(meta ? { meta: parseMeta(meta) } : {}),
 })
 
 function parseMeta(meta?: string) {

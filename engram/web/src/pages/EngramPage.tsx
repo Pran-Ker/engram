@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { EngramManifest } from '../../../shared/types.ts'
 import { api } from '../lib/api.ts'
@@ -26,6 +26,8 @@ export function EngramPage() {
   const [missing, setMissing] = useState(false)
   const [drawer, setDrawer] = useState(false)
   const [bank, setBank] = useState(false)
+  const [typing, setTyping] = useState(false)
+  const [faceMissing, setFaceMissing] = useState(false)
   const engram = useEngram(slug)
 
   useEffect(() => {
@@ -42,6 +44,7 @@ export function EngramPage() {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); if (!missing) engram.toggle() }
+      else if (e.key === '/') { e.preventDefault(); setTyping(true) }
       else if (e.key === '[') setDrawer((v) => !v)
       else if (e.key === ']') setBank((v) => !v)
       else if (e.key === 'i' || e.key === 'I') navigate(`/inspect/${slug}`)
@@ -54,6 +57,8 @@ export function EngramPage() {
   const name = manifest?.name ?? (missing ? 'No engram here' : '')
   const voiceMode = engram.speaking ? 'speaking' : engram.status === 'listening' ? 'listening' : 'off'
   const closePanels = () => { setDrawer(false); setBank(false) }
+  const micDown = engram.micState !== 'off' && engram.micState !== 'on'
+  const onMissing = useCallback((missing: boolean) => setFaceMissing(missing), [])
 
   return (
     <main className="stage" data-drawer={drawer} data-bank={bank}>
@@ -70,7 +75,7 @@ export function EngramPage() {
       <section className="stage-center" onClick={() => (drawer || bank) && closePanels()}>
         {missing
           ? <p className="stage-missing">There is no engram called <code>{slug}</code>. Open the list on the left to pick one.</p>
-          : <VideoStage slug={slug} speaking={engram.speaking} />}
+          : <VideoStage slug={slug} speaking={engram.speaking} onMissing={onMissing} />}
       </section>
 
       <footer className="stage-bottom">
@@ -93,8 +98,13 @@ export function EngramPage() {
         <Transcript
           lines={engram.lines}
           interim={engram.interim}
+          lead={faceMissing && !missing ? <>Face not generated yet. Run <code>npm run video:build {slug}</code>.</> : undefined}
           blank={missing ? 'Pick an engram on the left to start.' : undefined}
           disabled={missing}
+          input={typing || micDown}
+          focusInput={typing}
+          onReveal={() => setTyping(true)}
+          onHide={() => setTyping(false)}
           onSubmit={engram.ask}
         />
       </footer>

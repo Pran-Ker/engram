@@ -3,7 +3,8 @@ export type Stream = ReturnType<Player['startStream']>
 
 const HOLD_MS = 350
 const BUFFER_LEAD_S = 0.03
-const STREAM_LEAD_S = 0.06
+const STREAM_LEAD_S = 0.7
+const REBUFFER_S = 0.4
 const STREAM_RATE = 24_000
 
 export function createPlayer(onSpeaking: (speaking: boolean) => void) {
@@ -97,7 +98,8 @@ export function createPlayer(onSpeaking: (speaking: boolean) => void) {
         if (!live.has(it) || !pcm.length) return
         const buffer = c.createBuffer(1, pcm.length, STREAM_RATE)
         buffer.copyToChannel(Float32Array.from(pcm, (v) => v / 32768), 0)
-        schedule(it, buffer, first ? STREAM_LEAD_S : 0)
+        const behind = nextTime < c.currentTime
+        schedule(it, buffer, first ? STREAM_LEAD_S : behind ? REBUFFER_S : 0)
         first = false
       },
       end() {

@@ -26,6 +26,8 @@ app.route('/api/inspect', inspect)   // GET /:slug/runs, GET /:slug/turns, POST 
 app.route('/api/health', health)     // GET /
 app.route('/api/direct', direct)     // POST /engrams (record -> engram folder), GET /health  (direct avatar mode)
 
+app.notFound((c) => (c.req.path.startsWith('/api/') ? c.json({ error: `no route ${c.req.path}` }, 404) : c.text('Not Found', 404)))
+
 // Review pages for Prannay: everything under review/ (clips, samples, batches).
 app.use('/review/*', serveStatic({ root: './' }))
 app.get('/review/:batch', (c) => c.redirect(`/review/${c.req.param('batch')}/index.html`))

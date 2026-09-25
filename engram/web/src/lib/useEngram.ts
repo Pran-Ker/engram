@@ -4,7 +4,7 @@ import { api } from './api.ts'
 import { createPlayer, type Player, type Stream } from './audio.ts'
 import { createRecognizer, type MicFailure } from './speech.ts'
 
-export type SentenceStatus = 'pending' | 'speaking' | 'done' | 'novoice'
+export type SentenceStatus = 'pending' | 'speaking' | 'done' | 'novoice' | 'skipped'
 export type Sentence = { index: number; text: string; status: SentenceStatus }
 export type Line =
   | { id: string; role: 'user'; text: string }
@@ -127,6 +127,13 @@ export function useEngram(slug: string) {
   const setDraft = (lineId: string, draft: string) =>
     patchLine(lineId, (line) => (line.role === 'engram' ? { ...line, draft: draft.trim() || undefined } : line))
 
+  const skipUnspoken = () =>
+    setLines((l) => l.map((line) => {
+      if (line.role !== 'engram') return line
+      const sentences = line.sentences.map((s) => (s.status === 'done' || s.status === 'novoice' ? s : { ...s, status: 'skipped' as const }))
+      return { ...line, sentences, draft: undefined }
+    }))
+
   const flash = (cards: string[]) => {
     clearTimeout(highlightTimer.current)
     setUsedCards(cards)
@@ -142,8 +149,8 @@ export function useEngram(slug: string) {
   }
 
   const speakSentence = async (lineId: string, index: number, text: string, speech: Speech, gen: number) => {
-    const onStart = () => upsertSentence(lineId, { index, text, status: 'speaking' })
-    const onEnd = () => upsertSentence(lineId, { index, text, status: 'done' })
+    const onStart = () => gen === generation.current && upsertSentence(lineId, { index, text, status: 'speaking' })
+    const onEnd = () => gen === generation.current && upsertSentence(lineId, { index, text, status: 'done' })
     const held: { stream: Stream | null } = { stream: null }
     speech.attach((pcm) => {
       if (gen !== generation.current) return
@@ -166,9 +173,10 @@ export function useEngram(slug: string) {
   const ask = useCallback(async (raw: string) => {
     const text = raw.trim()
     if (!text) return
+    const gen = ++generation.current
     player.stop()
     abortRef.current?.abort()
-    const gen = ++generation.current
+    skipUnspoken()
     const abort = new AbortController()
     abortRef.current = abort
     recognizer.stop()
@@ -245,6 +253,7 @@ export function useEngram(slug: string) {
     abortRef.current?.abort()
     generation.current++
     player.stop()
+    skipUnspoken()
     setInterim('')
     setTurnOpen(false)
   }, [player, recognizer])

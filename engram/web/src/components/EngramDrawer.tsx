@@ -6,8 +6,6 @@ import './EngramDrawer.css'
 
 type Props = { open: boolean; current: string; onClose: () => void }
 
-const DOCS_URL = '/api/docs/adding-an-engram.md'
-
 export function EngramDrawer({ open, current, onClose }: Props) {
   const navigate = useNavigate()
   const [list, setList] = useState<EngramSummary[] | null>(null)
@@ -44,11 +42,7 @@ export function EngramDrawer({ open, current, onClose }: Props) {
           </button>
         ))}
         <div className="drawer-add">
-          <span className="drawer-name">Add an engram</span>
-          <span className="drawer-tagline">
-            A folder in <code>engrams/&lt;slug&gt;/</code> with a few photos, a few minutes of voice, and notes in <code>context/</code>. Restart the server and it appears here.
-          </span>
-          <a className="drawer-link" href={DOCS_URL} target="_blank" rel="noreferrer" tabIndex={open ? 0 : -1}>Steps in docs</a>
+          <span className="drawer-tagline">Add an engram: a folder in <code>engrams/&lt;slug&gt;/</code> with photos, voice, and notes.</span>
         </div>
       </div>
     </aside>

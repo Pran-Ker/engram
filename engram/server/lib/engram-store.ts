@@ -32,8 +32,9 @@ export function engramDir(slug: string) {
 
 export function loadManifest(slug: string): EngramManifest {
   const p = join(ENGRAMS_DIR, slug, 'engram.json')
-  if (!existsSync(p)) throw new Error(`no engram at ${p}`)
-  return JSON.parse(readFileSync(p, 'utf8'))
+  if (existsSync(p)) return JSON.parse(readFileSync(p, 'utf8'))
+  console.warn(`[engrams] no engram ${slug}: ${p} missing`)
+  throw new Error(`no engram ${slug}`)
 }
 
 export function loadCards(slug: string): ContextCard[] {

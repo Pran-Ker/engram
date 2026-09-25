@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path'
 
 const ENC = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-crf', '18', '-preset', 'slow', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-movflags', '+faststart', '-an']
 
-const BG = { hex: '0x0b0b0c', r: 11, g: 11, b: 12 }
+const BG_GREY = 14
+const SOURCE_TAGS = 'setparams=colorspace=bt709:range=tv'
+const OUTPUT_TAGS = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv'
 const FEATHER = { x: 0.12, y: 0.16 }
 
 function ff(args: string[]) {
@@ -23,11 +25,12 @@ function edgeMask(size: string) {
   return out
 }
 
-function melt(size: string, black: number) {
-  const lift = `lutrgb=r='max(val,${black})':g='max(val,${black})':b='max(val,${black})',colorlevels=rimin=${(black / 255).toFixed(4)}:gimin=${(black / 255).toFixed(4)}:bimin=${(black / 255).toFixed(4)}:romin=${(BG.r / 255).toFixed(4)}:gomin=${(BG.g / 255).toFixed(4)}:bomin=${(BG.b / 255).toFixed(4)}`
+function melt(size: string, black: number, grey: number) {
+  const hex = `0x${grey.toString(16).padStart(2, '0').repeat(3)}`
+  const lift = `lutrgb=r='max(val,${black})':g='max(val,${black})':b='max(val,${black})',colorlevels=rimin=${(black / 255).toFixed(4)}:gimin=${(black / 255).toFixed(4)}:bimin=${(black / 255).toFixed(4)}:romin=${(grey / 255).toFixed(4)}:gomin=${(grey / 255).toFixed(4)}:bomin=${(grey / 255).toFixed(4)}`
   return {
-    inputs: ['-loop', '1', '-framerate', '30', '-i', edgeMask(size), '-f', 'lavfi', '-i', `color=c=${BG.hex}:s=${size}:r=30`],
-    tail: `[v]format=rgb24,${lift}[c];[c][1:v]alphamerge=shortest=1[m];[2:v][m]overlay=shortest=1:format=rgb,format=yuv420p[out]`,
+    inputs: ['-loop', '1', '-framerate', '30', '-i', edgeMask(size), '-f', 'lavfi', '-i', `color=c=${hex}:s=${size}:r=30,format=rgb24`],
+    tail: `[v]${SOURCE_TAGS},format=rgb24,${lift}[c];[c][1:v]alphamerge=shortest=1[m];[2:v][m]overlay=shortest=1:format=rgb,${OUTPUT_TAGS}[out]`,
   }
 }
 
@@ -44,9 +47,9 @@ export function probe(path: string): Probe {
   return { width: s.width, height: s.height, fps: n / (d || 1), duration: Number(s.duration), frames: Number(s.nb_read_frames) }
 }
 
-export function pingPong(src: string, out: string, size: string, black = 20) {
+export function pingPong(src: string, out: string, size: string, black = 20, grey = BG_GREY) {
   mkdirSync(dirname(out), { recursive: true })
-  const m = melt(size, black)
+  const m = melt(size, black, grey)
   ff([
     '-i', src, ...m.inputs,
     '-filter_complex', `[0:v]${fit(size)},split[a][b];[b]reverse,trim=start_frame=1,setpts=PTS-STARTPTS[r];[a][r]concat=n=2:v=1:a=0,fps=30[v];${m.tail}`,
@@ -54,11 +57,11 @@ export function pingPong(src: string, out: string, size: string, black = 20) {
   ])
 }
 
-export function crossfadeLoop(src: string, out: string, size: string, black = 20, fade = 0.5) {
+export function crossfadeLoop(src: string, out: string, size: string, black = 20, grey = BG_GREY, fade = 0.5) {
   mkdirSync(dirname(out), { recursive: true })
   const { duration } = probe(src)
   const body = duration - fade
-  const m = melt(size, black)
+  const m = melt(size, black, grey)
   ff([
     '-i', src, ...m.inputs,
     '-filter_complex',
@@ -67,12 +70,12 @@ export function crossfadeLoop(src: string, out: string, size: string, black = 20
   ])
 }
 
-export function stillToIdle(portrait: string, out: string, size: string, black = 20, seconds = 8) {
+export function stillToIdle(portrait: string, out: string, size: string, black = 20, grey = BG_GREY, seconds = 8) {
   mkdirSync(dirname(out), { recursive: true })
   const [w, h] = size.split('x').map(Number)
   const frames = seconds * 30
   const zoom = `1.02+0.012*sin(2*PI*on/${frames})`
-  const m = melt(size, black)
+  const m = melt(size, black, grey)
   ff([
     '-loop', '1', '-framerate', '30', '-i', portrait, ...m.inputs,
     '-filter_complex', `[0:v]scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,crop=${w * 2}:${h * 2},zoompan=z='${zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)+6*sin(2*PI*on/${frames})':d=1:s=${size}:fps=30[v];${m.tail}`,

@@ -39,15 +39,20 @@ export function InspectPage() {
 
   const loadTurns = useCallback(() => fetchInto(setTurns, () => inspectApi.turns(slug)), [slug, fetchInto])
   const loadJobs = useCallback(() => fetchInto(setJobs, () => inspectApi.jobs(slug)), [slug, fetchInto])
+  const loadFlags = useCallback(() => {
+    inspectApi.flags(slug)
+      .then((data) => setFlags((f) => ({ data: [...data, ...f.data.filter((x) => x.id.startsWith('tmp-'))], state: 'ready' })))
+      .catch((e: Error) => setFlags((f) => ({ ...f, state: f.data.length ? f.state : 'error', error: e.message })))
+  }, [slug])
 
   useEffect(() => {
     fetchInto(setRuns, () => inspectApi.runs(slug))
     loadTurns()
-    fetchInto(setFlags, () => inspectApi.flags(slug))
+    loadFlags()
     loadJobs()
     fetch(`/api/engrams/${slug}`).then((r) => r.ok ? r.json() : null).then((m) => m?.name && setName(m.name)).catch(() => {})
     fetch(`/api/engrams/${slug}/video/poster`, { method: 'HEAD' }).then((r) => setPosterUrl(r.ok ? `/api/engrams/${slug}/video/poster` : null)).catch(() => setPosterUrl(null))
-  }, [slug, fetchInto, loadTurns, loadJobs])
+  }, [slug, fetchInto, loadTurns, loadFlags, loadJobs])
 
   useEffect(() => {
     document.title = `${name} · Inspect · Engram`
@@ -55,11 +60,13 @@ export function InspectPage() {
   }, [name])
 
   useEffect(() => {
+    const visible = () => document.visibilityState === 'visible'
     const jobsTimer = setInterval(loadJobs, 4000)
-    const turnsTimer = setInterval(loadTurns, 12000)
+    const turnsTimer = setInterval(() => { if (visible()) loadTurns() }, 12000)
+    const flagsTimer = setInterval(() => { if (visible()) loadFlags() }, 6000)
     const clock = setInterval(() => setNow(Date.now()), 1000)
-    return () => { clearInterval(jobsTimer); clearInterval(turnsTimer); clearInterval(clock) }
-  }, [loadJobs, loadTurns])
+    return () => { clearInterval(jobsTimer); clearInterval(turnsTimer); clearInterval(flagsTimer); clearInterval(clock) }
+  }, [loadJobs, loadTurns, loadFlags])
 
   useEffect(() => {
     if (params.get('turn') || !turns.data[0]) return
@@ -133,8 +140,8 @@ export function InspectPage() {
   }, [turns.data, selectedTurnId, selectTurn, selectedFlagIds, loadedStep, run])
 
   const lossSeries = useMemo(() => run ? [
-    { name: 'train loss', color: 'var(--series-1)', points: run.curve.map((c) => ({ x: c.step, y: c.train })), format: f3 },
-    { name: 'val loss', color: 'var(--series-2)', points: run.curve.filter((c) => c.val !== undefined).map((c) => ({ x: c.step, y: c.val! })), dots: true, format: f3 },
+    { name: 'train loss', color: 'var(--series-1)', points: run.curve.map((c) => ({ x: c.step, y: c.train })), format: f3, axisFormat: f1 },
+    { name: 'val loss', color: 'var(--series-2)', points: run.curve.filter((c) => c.val !== undefined).map((c) => ({ x: c.step, y: c.val! })), dots: true, format: f3, axisFormat: f1 },
   ] : [], [run])
 
   const qualitySeries = useMemo(() => run ? [
@@ -156,7 +163,6 @@ export function InspectPage() {
         setPopoverOpen={setPopoverOpen}
         selectedFlags={selectedFlagIds.size}
         onDistill={() => void distill()}
-        dataSource={run ? (run.source === 'checkpoints' ? 'voice/checkpoints' : 'fixture') : '—'}
       />
       <TurnList turns={turns.data} selectedId={selectedTurnId} onSelect={selectTurn} flags={flags.data} state={turns.state} error={turns.error} onRetry={loadTurns} slug={slug} />
       <TurnDetail
@@ -189,6 +195,7 @@ export function InspectPage() {
 }
 
 const f3 = (n: number) => n.toFixed(3)
+const f1 = (n: number) => n.toFixed(1)
 
 function readStep(slug: string) {
   try {

@@ -76,13 +76,28 @@ tts.post('/:slug/tts/stream', async (c) => {
 
   const parts: Buffer[] = []
   let firstMs = 0
+  // Modal generates at ~0.87x real time, so long sentences need a head start or the browser re-buffers mid-sentence.
+  // Hold the first ~15% of the estimated duration (minus what the client already holds), at least 0.4 s so short sentences do not re-buffer, capped, then pass through.
+  const estSeconds = text.length * 0.08
+  const holdBytes = Math.round(Math.min(1.6, Math.max(0.4, 0.15 * estSeconds - 0.6)) * 48_000)
+  let held: Buffer[] = []
+  let heldBytes = 0
+  let released = holdBytes === 0
   const tee = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       if (!firstMs) firstMs = Date.now() - t0
       parts.push(Buffer.from(chunk))
-      controller.enqueue(chunk)
+      if (released) return controller.enqueue(chunk)
+      held.push(Buffer.from(chunk))
+      heldBytes += chunk.byteLength
+      if (heldBytes >= holdBytes) {
+        controller.enqueue(new Uint8Array(Buffer.concat(held)))
+        held = []
+        released = true
+      }
     },
-    flush() {
+    flush(controller) {
+      if (held.length) controller.enqueue(new Uint8Array(Buffer.concat(held)))
       const ms = Date.now() - t0
       writeCache(key, { wav: wavOf(Buffer.concat(parts)), provider: upstream.provider, ms, parts: 1 })
       logEvent({ engram: slug, session: 'server', turn, type: 'tts_done', ms, provider: upstream.provider, chars: text.length, meta: { firstMs, stream: true } })

@@ -13,7 +13,6 @@ type Props = {
   setPopoverOpen: (open: boolean) => void
   selectedFlags: number
   onDistill: () => void
-  dataSource: string
 }
 
 export function Header(p: Props) {
@@ -28,8 +27,7 @@ export function Header(p: Props) {
     return () => window.removeEventListener('pointerdown', close)
   }, [p.popoverOpen, p.setPopoverOpen])
 
-  const step = p.loadedStep ?? p.run?.currentStep ?? 0
-  const total = p.run?.steps ?? 0
+  const step = p.loadedStep ?? p.run?.currentStep ?? null
 
   return (
     <header className="ih">
@@ -37,23 +35,16 @@ export function Header(p: Props) {
       <span className="ih-name">{p.name}</span>
       <span className="ih-sep">·</span>
       <span className="mono">{p.run?.id ?? '—'}</span>
-      <span className="ih-sep">·</span>
-      <span className="mono">step {fmtInt(step)} / {fmtInt(total)}</span>
-      {p.run && (
-        <span className="ih-meta mono">
-          {p.run.status === 'done' ? `done · ${p.run.trainMinutes ?? '—'} min` : `running · ${Math.round((p.run.currentStep / p.run.steps) * 100)}%`} · {p.run.gpu} · {p.dataSource}
-        </span>
-      )}
       <span className="ih-spacer" />
       <div className="ih-pop-anchor" ref={popRef}>
-        <button className={`btn${p.popoverOpen ? ' is-open' : ''}`} onClick={() => p.setPopoverOpen(!p.popoverOpen)} aria-haspopup="menu" aria-expanded={p.popoverOpen}>
-          Load checkpoint <span className="chev">▾</span><kbd>L</kbd>
+        <button className={`btn${p.popoverOpen ? ' is-open' : ''}`} onClick={() => p.setPopoverOpen(!p.popoverOpen)} aria-haspopup="menu" aria-expanded={p.popoverOpen} title="Loaded checkpoint · click to change">
+          Checkpoint {step !== null && <span className="mono">{fmtInt(step)}</span>}<span className="chev">▾</span><kbd>L</kbd>
         </button>
         {p.popoverOpen && p.run && (
           <CheckpointPopover checkpoints={p.run.checkpoints} loaded={p.loadedStep} onLoad={(s) => { p.onLoad(s); p.setPopoverOpen(false) }} />
         )}
       </div>
-      <button className="btn btn-accent" disabled={p.selectedFlags === 0} onClick={p.onDistill} title={p.selectedFlags ? `Queue a distill run from step ${fmtInt(step)}` : 'Select at least one flag'}>
+      <button className="btn btn-accent" disabled={p.selectedFlags === 0} onClick={p.onDistill} title={p.selectedFlags ? `Queue a distill run from checkpoint ${fmtInt(step ?? 0)}` : 'Select at least one flag'}>
         Distill <span className="chev">▸</span>{p.selectedFlags > 0 && <span className="count">{p.selectedFlags}</span>}<kbd>D</kbd>
       </button>
     </header>

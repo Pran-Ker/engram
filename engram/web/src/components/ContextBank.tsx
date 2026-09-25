@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { ContextCard, ContextSection } from '../../../shared/types.ts'
-import { api } from '../lib/api.ts'
+import { api, ApiError } from '../lib/api.ts'
 import './ContextBank.css'
 
 type Props = {
@@ -22,7 +22,20 @@ const SECTIONS: Array<{ id: ContextSection; label: string }> = [
   { id: 'memory', label: 'Memories' },
 ]
 
+const NOTHING_NEW = 'Nothing new on the web for that. The bank already has it.'
+
 const firstName = (name: string) => name.split(' ')[0]
+
+const sentence = (text: string) => {
+  const trimmed = text.trim().replace(/[.\s]+$/, '')
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1) + '.'
+}
+
+const askFailure = (err: unknown) => {
+  if (err instanceof ApiError) return err.status === 404 && /^no engram/.test(err.detail) ? 'Web lookups are not wired up yet.' : sentence(err.detail)
+  if (err instanceof Error && err.message.includes('Failed to fetch')) return 'The web lookup did not come back. Is the API running on :4100?'
+  return 'The web lookup did not come back. Try a shorter question.'
+}
 
 const shortSource = (source: string) => {
   if (!/^https?:\/\//.test(source)) return source
@@ -40,7 +53,7 @@ export function ContextBank({ open, slug, name, highlighted, refreshKey, onClose
   const [loadError, setLoadError] = useState('')
   const [query, setQuery] = useState('')
   const [asking, setAsking] = useState(false)
-  const [askError, setAskError] = useState('')
+  const [askNote, setAskNote] = useState('')
   const [fresh, setFresh] = useState<string[]>([])
 
   const load = useCallback(() => {
@@ -57,16 +70,16 @@ export function ContextBank({ open, slug, name, highlighted, refreshKey, onClose
     const q = query.trim()
     if (!q || asking) return
     setAsking(true)
-    setAskError('')
+    setAskNote('')
     try {
       const added = await api.addWebContext(slug, q)
       if (!Array.isArray(added)) throw new Error('not an array')
       setFresh(added.map((c) => c.id))
       setQuery('')
+      if (!added.length) setAskNote(NOTHING_NEW)
       load()
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      setAskError(message.includes('404') ? 'Web lookups are not wired up yet.' : 'The web lookup did not come back. Try a shorter question.')
+      setAskNote(askFailure(err))
     } finally {
       setAsking(false)
     }
@@ -89,7 +102,7 @@ export function ContextBank({ open, slug, name, highlighted, refreshKey, onClose
       <form className="bank-ask" onSubmit={ask} data-busy={asking}>
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { setQuery(e.target.value); setAskNote('') }}
           placeholder={`Ask the web about ${firstName(name)}…`}
           aria-label={`Ask the web about ${name}`}
           autoComplete="off"
@@ -98,7 +111,7 @@ export function ContextBank({ open, slug, name, highlighted, refreshKey, onClose
           tabIndex={open ? 0 : -1}
         />
         {asking && <span className="bank-asking">Searching with Nimble</span>}
-        {askError && <span className="bank-aside">{askError}</span>}
+        {askNote && <span className="bank-aside">{askNote}</span>}
       </form>
       <div className="bank-scroll">
         {loadError && <p className="bank-note">{loadError}</p>}

@@ -2,21 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.ts'
 import './VideoStage.css'
 
-type Props = { slug: string; speaking: boolean }
+type Props = { slug: string; speaking: boolean; onMissing: (missing: boolean) => void }
 type ClipState = 'loading' | 'ready' | 'missing'
 
-export function VideoStage({ slug, speaking }: Props) {
+const RETRIES = 2
+const RETRY_MS = 1500
+
+export function VideoStage({ slug, speaking, onMissing }: Props) {
   const idleRef = useRef<HTMLVideoElement>(null)
   const talkRef = useRef<HTMLVideoElement>(null)
   const [idle, setIdle] = useState<ClipState>('loading')
   const [talk, setTalk] = useState<ClipState>('loading')
   const [poster, setPoster] = useState<ClipState>('loading')
+  const retries = useRef({ idle: 0, talk: 0 })
 
   const ready = idle === 'ready' && talk === 'ready'
   const missing = idle === 'missing' || talk === 'missing'
 
   useEffect(() => {
     setIdle('loading'); setTalk('loading'); setPoster('loading')
+    retries.current = { idle: 0, talk: 0 }
   }, [slug])
 
   useEffect(() => {
@@ -24,6 +29,8 @@ export function VideoStage({ slug, speaking }: Props) {
     idleRef.current?.play().catch(() => {})
     talkRef.current?.play().catch(() => {})
   }, [ready])
+
+  useEffect(() => { onMissing(missing) }, [missing, onMissing])
 
   const clip = (ref: typeof idleRef, set: (s: ClipState) => void, name: 'idle' | 'talk') => (
     <video
@@ -37,7 +44,11 @@ export function VideoStage({ slug, speaking }: Props) {
       playsInline
       preload="auto"
       onCanPlayThrough={() => set('ready')}
-      onError={() => set('missing')}
+      onError={(e) => {
+        const video = e.currentTarget
+        if (retries.current[name]++ < RETRIES) setTimeout(() => video.load(), RETRY_MS)
+        else set('missing')
+      }}
     />
   )
 
@@ -59,11 +70,6 @@ export function VideoStage({ slug, speaking }: Props) {
         {clip(idleRef, setIdle, 'idle')}
         {clip(talkRef, setTalk, 'talk')}
       </div>
-      {missing && (
-        <p className="stage-note">
-          Face not generated yet. Run <code>npm run video:build {slug}</code>.
-        </p>
-      )}
     </div>
   )
 }

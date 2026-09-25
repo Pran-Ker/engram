@@ -206,6 +206,8 @@ export function TurnDetail(p: Props) {
 
   const ticks = useMemo(() => tickMarks(duration), [duration])
   const frames = useMemo(() => Math.max(6, Math.floor(width / 96)), [width])
+  const narrowFrames = width / frames < 96
+  const videoFrames = useVideoFrames(p.slug, turn?.id, frames, duration, p.posterUrl !== null)
   const voiceFlags = p.flags.filter((f) => f.track === 'voice')
   const faceFlags = p.flags.filter((f) => f.track === 'face')
 
@@ -245,9 +247,9 @@ export function TurnDetail(p: Props) {
           {audioState === 'playing' ? '❚❚ Pause' : audio ? '▶ Play' : audioState === 'loading' ? 'Synthesizing…' : '▶ Synthesize'}<kbd>space</kbd>
         </button>
         <span className="mono dim">{turn ? fmtTime(duration) : ''}{realDuration === null && turn ? ' est.' : ''}</span>
-        <span className="mono dim">{audio ? `waveform · ${audio.provider}` : 'waveform · synthetic from text'}</span>
+        <span className="mono dim tl-src">{audio ? `waveform · ${audio.provider}` : 'waveform · synthetic from text'}</span>
         {selection && <span className="mono sel-label">{fmtTime(selection.start)} → {fmtTime(selection.end)} <span className="dim">· v voice · f face · esc</span></span>}
-        {audioError && <span className="err">{audioError}</span>}
+        {audioError && <span className="err tl-err" title={audioError}>{audioError}</span>}
         <span className="ih-spacer" />
         {turn && <span className="mono dim">{fmtClock(turn.ts)}</span>}
       </div>
@@ -261,18 +263,29 @@ export function TurnDetail(p: Props) {
         <div className="tl-wave" data-track="voice">
           <canvas ref={canvasRef} />
           {voiceFlags.map((f) => <Band key={f.id} flag={f} toX={toX} selected={p.selectedFlagIds.has(f.id)} />)}
+          {draft && selection && (
+            <FlagPopover
+              draft={draft}
+              selection={selection}
+              left={Math.max(0, Math.min(width - 360, toX(selection.start)))}
+              onChange={setDraft}
+              onSave={saveDraft}
+              onCancel={() => { setDraft(null); setSelection(null) }}
+              error={saveError}
+            />
+          )}
         </div>
         <div className="tl-words" data-track="voice">
           {words.map((w, i) => (
             <span key={i} className="word" style={{ left: toX(w.start), width: Math.max(4, toX(w.end) - toX(w.start)) }} title={`${w.text} ${fmtTime(w.start)}–${fmtTime(w.end)}`}>{w.text}</span>
           ))}
         </div>
-        <div className="tl-frames" data-track="face">
+        <div className={`tl-frames${narrowFrames ? ' is-narrow' : ''}`} data-track="face">
           {Array.from({ length: frames }, (_, i) => (
             <div
               key={i}
               className={`frame${p.posterUrl ? '' : ' is-dark'}`}
-              style={{ width: `${100 / frames}%`, backgroundImage: p.posterUrl ? `url(${p.posterUrl})` : undefined, backgroundPosition: `${50 + Math.sin(i * 1.7) * 3}% ${45 + Math.cos(i * 1.1) * 2}%`, filter: p.posterUrl ? `brightness(${0.92 + Math.sin(i * 0.9) * 0.06})` : undefined }}
+              style={{ width: `${100 / frames}%`, backgroundImage: frameUrl(videoFrames?.[i] ?? p.posterUrl) }}
             >
               <span className="mono">{fmtTime((i / frames) * duration)}</span>
             </div>
@@ -283,18 +296,6 @@ export function TurnDetail(p: Props) {
 
         {selection && <div className="tl-sel" style={{ left: toX(selection.start), width: Math.max(1, toX(selection.end) - toX(selection.start)) }} />}
         {playhead !== null && audio && <div className="tl-playhead" style={{ left: toX(Math.min(duration, playhead)) }} />}
-
-        {draft && selection && (
-          <FlagPopover
-            draft={draft}
-            selection={selection}
-            left={Math.max(0, Math.min(width - 360, toX(selection.start)))}
-            onChange={setDraft}
-            onSave={saveDraft}
-            onCancel={() => { setDraft(null); setSelection(null) }}
-            error={saveError}
-          />
-        )}
       </div>
 
       <FlagTable flags={p.flags} selected={p.selectedFlagIds} onToggle={p.onToggleFlag} onFocus={(f) => setSelection({ start: f.start, end: f.end })} />
@@ -316,7 +317,7 @@ function Band(p: { flag: InspectFlag; toX: (s: number) => number; selected: bool
 
 function FlagPopover(p: { draft: Draft; selection: Selection; left: number; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void; error: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => { inputRef.current?.focus({ preventScroll: true }) }, [])
   const tags = p.draft.track === 'voice' ? VOICE_TAGS : FACE_TAGS
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); p.onSave() }
@@ -394,5 +395,61 @@ async function decode(buf: ArrayBuffer) {
   ctx ??= new AudioContext()
   return ctx.decodeAudioData(buf)
 }
+
+const frameUrl = (src: string | null) => (src ? `url(${src})` : undefined)
+
+const frameCache = new Map<string, string[]>()
+
+function useVideoFrames(slug: string, turnId: string | undefined, count: number, duration: number, enabled: boolean) {
+  const [frames, setFrames] = useState<string[] | null>(null)
+  const key = `${slug}:${turnId}:${count}:${duration.toFixed(1)}`
+  useEffect(() => {
+    if (!enabled || !turnId || !count) { setFrames(null); return }
+    const hit = frameCache.get(key)
+    setFrames(hit ?? null)
+    if (hit) return
+    let cancelled = false
+    const times = Array.from({ length: count }, (_, i) => (i / count) * duration)
+    sampleVideoFrames(`/api/engrams/${slug}/video/talk`, times)
+      .then((urls) => { frameCache.set(key, urls); if (!cancelled) setFrames(urls) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [key, enabled])
+  return frames
+}
+
+async function sampleVideoFrames(src: string, times: number[]) {
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'auto'
+  video.src = src
+  await new Promise<void>((resolve, reject) => {
+    video.onloadeddata = () => resolve()
+    video.onerror = () => reject(new Error('video unavailable'))
+  })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 192
+  canvas.height = 108
+  const g = canvas.getContext('2d')!
+  const loop = video.duration || 1
+  const out: string[] = []
+  for (const t of times) {
+    await seekVideo(video, t % loop)
+    g.drawImage(video, 0, 0, canvas.width, canvas.height)
+    out.push(canvas.toDataURL('image/jpeg', 0.72))
+  }
+
+  video.removeAttribute('src')
+  video.load()
+  return out
+}
+
+const seekVideo = (video: HTMLVideoElement, t: number) => new Promise<void>((resolve) => {
+  const timer = setTimeout(resolve, 1500)
+  video.onseeked = () => { clearTimeout(timer); resolve() }
+  video.currentTime = t
+})
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000

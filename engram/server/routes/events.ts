@@ -26,6 +26,7 @@ events.post('/', async (c) => {
 
 events.get('/', async (c) => {
   const { engram, since, limit } = c.req.query()
+  if (since && Number.isNaN(Date.parse(since))) return c.json({ error: `since must be an ISO date, got ${since}` }, 400)
   try {
     return c.json(await queryEvents({ engram, since, limit: limit ? Number(limit) : undefined }))
   } catch (e) {

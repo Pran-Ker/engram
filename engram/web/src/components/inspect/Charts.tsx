@@ -9,6 +9,7 @@ export type Series = {
   dashed?: boolean
   dots?: boolean
   format: (n: number) => string
+  axisFormat?: (n: number) => string
 }
 
 type Props = {
@@ -53,6 +54,11 @@ export function LineChart(p: Props) {
     return M.top + plotH - ((y - lo) / (hi - lo || 1)) * plotH
   }
 
+  const axisLabel = (axis: 'left' | 'right', t: number) => {
+    const s = p.series.find((x) => (x.axis ?? 'left') === axis)
+    return s ? (s.axisFormat ?? s.format)(t) : String(t)
+  }
+
   const hovered = hoverX === null ? null : p.series.map((s) => nearest(s.points, hoverX))
   const hoverStep = hovered?.find(Boolean)?.x ?? null
 
@@ -90,11 +96,11 @@ export function LineChart(p: Props) {
           {yTicks(domains.left).map((t) => (
             <g key={`l${t}`}>
               <line x1={M.left} x2={M.left + plotW} y1={sy(t, 'left')} y2={sy(t, 'left')} className="grid" />
-              <text x={M.left - 6} y={sy(t, 'left') + 3} textAnchor="end" className="axis">{p.series.find((s) => s.axis !== 'right')?.format(t) ?? t}</text>
+              <text x={M.left - 6} y={sy(t, 'left') + 3} textAnchor="end" className="axis">{axisLabel('left', t)}</text>
             </g>
           ))}
           {hasRight && yTicks(domains.right).map((t) => (
-            <text key={`r${t}`} x={M.left + plotW + 6} y={sy(t, 'right') + 3} textAnchor="start" className="axis">{p.series.find((s) => s.axis === 'right')?.format(t) ?? t}</text>
+            <text key={`r${t}`} x={M.left + plotW + 6} y={sy(t, 'right') + 3} textAnchor="start" className="axis">{axisLabel('right', t)}</text>
           ))}
           {xTicks(p.xMax, plotW).map((t) => (
             <text key={`x${t}`} x={sx(t)} y={size.h - 4} textAnchor="middle" className="axis">{fmtInt(t)}</text>

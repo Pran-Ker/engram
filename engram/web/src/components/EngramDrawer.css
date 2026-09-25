@@ -92,20 +92,6 @@
   padding-top: 16px;
 }
 
-.drawer-link {
-  align-self: flex-start;
-  font-size: 13px;
-  color: var(--fg-1);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
-  transition: color var(--dur-1) ease, text-decoration-color var(--dur-1) ease;
-}
-@media (hover: hover) and (pointer: fine) {
-  .drawer-link:hover { color: var(--fg); text-decoration-color: var(--fg-1); }
-}
-.drawer-link:focus-visible { outline: 1px solid var(--line-strong); outline-offset: 2px; border-radius: 2px; }
-
 .drawer-error {
   margin: 8px 12px;
   color: var(--fg-1);

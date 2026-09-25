@@ -16,6 +16,8 @@ const JOBS_FILE = join(REVIEW_DIR, 'distill-jobs.jsonl')
 const TTS_CACHE_DIR = resolve(process.env.TTS_CACHE_DIR ?? 'review/tts-cache')
 const MAX_SENTENCES = 3
 const FIXTURE_SLUG = 'prannay'
+const THROWAWAY_SESSION = /^(test|curl|bench)|bench/i
+const THROWAWAY_PROMPT = /mention (the number|\d)/i
 const SELF = `http://localhost:${process.env.PORT ?? 4100}`
 
 inspect.get('/:slug/runs', (c) => c.json(loadRuns(c.req.param('slug'))))
@@ -179,6 +181,7 @@ function turnsFromEvents(rows: EventRow[]): InspectTurn[] {
     const done = events.find((e) => e.type === 'chat_done')
     if (!done?.text) continue
     const user = events.find((e) => e.type === 'user_utterance')
+    if (isThrowaway(events, user?.text)) continue
     const firstToken = events.find((e) => e.type === 'chat_first_token')
     const tts = events.find((e) => e.type === 'tts_done') ?? ttsNear(ttsRows, done.ts)
     const durationMs = Math.round(done.text.length * 58 + 380)
@@ -195,6 +198,10 @@ function turnsFromEvents(rows: EventRow[]): InspectTurn[] {
     })
   }
   return turns.sort((a, b) => a.ts.localeCompare(b.ts))
+}
+
+function isThrowaway(events: EventRow[], userText: string | undefined) {
+  return events.some((e) => THROWAWAY_SESSION.test(e.session ?? '')) || THROWAWAY_PROMPT.test(userText ?? '')
 }
 
 function isoTs(ts: string) {

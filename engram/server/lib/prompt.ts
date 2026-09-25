@@ -3,25 +3,38 @@ import type { WebResult } from './nimble.ts'
 
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
-const MAX_CARDS = 6
-const CARD_CHARS = 450
-const NOTES_CHARS = 2600
-const HISTORY_TURNS = 6
+const MAX_CARDS = 4
+const CARD_CHARS = 300
+const NOTES_CHARS = 1400
+const VOICE_CHARS = 450
+const FEWSHOT_PAIRS = 3
+const HISTORY_TURNS = 4
+const RULES = 'Each question comes with notes about yourself. Use only what the notes say; if they do not cover it, say you do not know in one sentence. Never guess why things happened or speak for people and companies you worked with. When a note or an earlier answer already answers the question, repeat it as written. Answer out loud in one to three short sentences, each under twenty words, plain speech, no lists or markdown, never mention the notes. No dashes, semicolons or parentheses; use a comma or start a new sentence instead.'
 const STOPWORDS = new Set('the a an and or but of to in on at for with about from by as is are was were be been being am do does did have has had you your yours yourself i me my we our us he him his she her it its they them their this that these those what which who whom whose when where why how tell say said think feel know like just really very some any all can could would should will shall may might one thing things something anything right now there here than then too also into over out up down off so if not no yes'.split(' '))
 
 export const tokenize = (s: string) =>
   s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOPWORDS.has(w))
 
+const FORCED: [RegExp, (card: ContextCard) => boolean][] = [
+  [/\b(working|building|right now|these days|up to)\b/i, (c) => c.id.startsWith('work-00')],
+  [/\b(school|college|university|degree|study|studied|education)\b/i, (c) => c.id.startsWith('profile-02')],
+  [/\bhow did you get into\b/i, (c) => c.section === 'story'],
+  [/\bhexo\b/i, (c) => c.id.startsWith('work-03')],
+]
+
 export function pickCards(cards: ContextCard[], question: string, excludeIds: string[] = []): ContextCard[] {
   const asked = new Set(tokenize(question))
   const facts = cards.filter((c) => c.section !== 'voice' && !excludeIds.includes(c.id))
+  const forced = FORCED.flatMap(([re, match]) => (re.test(question) ? facts.filter(match) : []))
   const scored = facts
+    .filter((c) => !forced.includes(c))
     .map((card) => ({ card, score: relevance(card, asked) * (card.section === 'memory' ? 0.5 : 1) }))
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
   const memories = scored.filter((s) => s.card.section === 'memory').slice(0, 1)
   const others = scored.filter((s) => s.card.section !== 'memory')
-  const picked = [...others, ...memories].sort((a, b) => b.score - a.score).slice(0, MAX_CARDS).map((s) => s.card)
+  const ranked = [...others, ...memories].sort((a, b) => b.score - a.score).map((s) => s.card)
+  const picked = [...forced, ...ranked].slice(0, MAX_CARDS)
   return picked.length ? picked : defaults(facts)
 }
 
@@ -37,7 +50,8 @@ function relevance(card: ContextCard, asked: Set<string>) {
 // "what I'm doing now" card) or, for engrams without one, the first work card.
 const defaults = (cards: ContextCard[]) => [
   ...cards.filter((c) => c.id.startsWith('profile-01')),
-  ...(cards.some((c) => c.id.startsWith('work-05')) ? cards.filter((c) => c.id.startsWith('work-05')) : cards.filter((c) => c.section === 'work').slice(0, 1)),
+  ...cards.filter((c) => c.id.startsWith('work-00')),
+  ...(cards.some((c) => c.id.startsWith('work-05')) ? cards.filter((c) => c.id.startsWith('work-05')) : cards.filter((c) => c.section === 'work' && !c.id.startsWith('work-00')).slice(0, 1)),
 ]
 
 export function buildTurn(
@@ -58,20 +72,21 @@ export function buildTurn(
   const prior = history.slice(0, -1).slice(-HISTORY_TURNS)
   const messages: PromptMessage[] = [
     { role: 'system', content: renderSystem(manifest, voice) },
-    ...fewShot(voice),
+    ...fewShot(voice, question),
     ...prior,
-    { role: 'user', content: `${notes}\n\n${question}` },
+    { role: 'user', content: `${today()}\n\n${notes}\n\n${question}` },
   ]
   return { messages, used: [...facts.map((c) => c.id), ...voice.map((c) => c.id)] }
 }
 
+const today = () =>
+  `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+
 function renderSystem(manifest: EngramManifest, voice: ContextCard[]) {
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   return [
     manifest.brain.persona,
-    `Today is ${today}.`,
     voice.length ? `How you talk:\n${voice.map(renderVoice).join('\n')}` : '',
-    'Each question comes with notes about yourself. Use only what the notes say; if they do not cover it, say you do not know in one sentence. Never speculate about why things happened or about people and companies you worked with. Answer out loud in one to three short sentences, plain speech, no lists or markdown, never mention the notes. Every sentence is spoken aloud: keep each under twenty words, no dashes of any kind, no semicolons, no parentheses; use a comma or start a new sentence instead.',
+    RULES,
   ].filter(Boolean).join('\n\n')
 }
 
@@ -109,17 +124,29 @@ export const firstPerson = (text: string) =>
   PRONOUNS.reduce((out, [re, sub]) => out.replace(re, sub), text)
 
 const renderVoice = (card: ContextCard) =>
-  `- ${card.title}: ${cutAtSentence(compact(withoutExamples(card.body)), CARD_CHARS)}`
+  `- ${card.title}: ${cutAtSentence(compact(withoutExamples(card.body)), VOICE_CHARS)}`
 
 const withoutExamples = (body: string) =>
   body.split('\n').filter((line) => !/^Q:\s/.test(line.trim())).join('\n')
 
-export function fewShot(cards: ContextCard[]): ChatMessage[] {
+export function fewShot(cards: ContextCard[], question?: string): ChatMessage[] {
   const lines = cards.filter((c) => c.section === 'voice').flatMap((c) => c.body.split('\n'))
-  return lines.flatMap((line) => {
+  const pairs = lines.flatMap((line) => {
     const m = /^Q:\s*(.+?)\s+A:\s*(.+)$/.exec(line.trim())
-    return m ? [{ role: 'user' as const, content: m[1] }, { role: 'assistant' as const, content: m[2] }] : []
+    return m ? [{ q: m[1], a: m[2] }] : []
   })
+  const chosen = question ? closestPairs(pairs, question) : pairs
+  return chosen.flatMap(({ q, a }) => [{ role: 'user' as const, content: q }, { role: 'assistant' as const, content: a }])
+}
+
+function closestPairs(pairs: { q: string; a: string }[], question: string) {
+  const asked = new Set(tokenize(question))
+  return pairs
+    .map((pair, i) => ({ pair, i, score: tokenize(pair.q).filter((w) => asked.has(w)).length }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, FEWSHOT_PAIRS)
+    .sort((a, b) => a.i - b.i)
+    .map((s) => s.pair)
 }
 
 function cutAtSentence(text: string, max: number) {

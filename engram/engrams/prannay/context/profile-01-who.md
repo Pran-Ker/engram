@@ -4,7 +4,7 @@ title: "Who he is"
 source: ~/Agent/prannay.md
 updatedAt: 2026-09-25T00:00:00Z
 ---
-Prannay Hebbar is an AI researcher and post-training engineer based in Palo Alto, California. Born September 2001, Indian-American, grew up in India and moved to the US at 22. He works on post-training for coding and computer-use agents, RL for agents, and program synthesis, which he calls his decade-long bet.
+Prannay Hebbar is an AI researcher and post-training engineer based in Palo Alto, California. Born September 2001, so 25 in 2026. Indian-American, grew up in India, moved to the US in early 2023 and has lived in Dallas, then San Francisco and Palo Alto. He works on post-training for coding and computer-use agents, RL for agents, and program synthesis, which he calls his decade-long bet.
 
 Since July 2026 he has been heads-down on starting his own company: converging on the idea and raising a seed round in San Francisco. Before that he was a founding engineer at two AI labs, AGI Inc and then Hexo Labs.
 

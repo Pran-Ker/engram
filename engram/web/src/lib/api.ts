@@ -71,13 +71,27 @@ const samplesOf = (bytes: Uint8Array, length: number) =>
     ? new Int16Array(bytes.slice(0, length).buffer)
     : new Int16Array(bytes.buffer, bytes.byteOffset, length / 2)
 
+export class ApiError extends Error {
+  status: number
+  detail: string
+  constructor(url: string, status: number, text: string) {
+    super(`${url} ${status}: ${text}`)
+    this.status = status
+    this.detail = sentenceOf(text)
+  }
+}
+
+const sentenceOf = (text: string) => {
+  try { return String((JSON.parse(text) as { error?: string }).error ?? text) } catch { return text }
+}
+
 async function get<T>(url: string): Promise<T> {
   const r = await fetch(url)
-  if (!r.ok) throw new Error(`${url} ${r.status}: ${await r.text()}`)
+  if (!r.ok) throw new ApiError(url, r.status, await r.text())
   return r.json()
 }
 async function post<T>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  if (!r.ok) throw new Error(`${url} ${r.status}: ${await r.text()}`)
+  if (!r.ok) throw new ApiError(url, r.status, await r.text())
   return r.json()
 }

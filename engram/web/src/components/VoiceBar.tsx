@@ -45,7 +45,6 @@ export function VoiceBar({ mode, playbackNode, micNode }: Props) {
       accent: cssVar('--accent'),
       accentSoft: cssVar('--accent-soft'),
       dim: cssVar('--fg-2'),
-      floor: cssVar('--line-strong'),
       line: cssVar('--line'),
     }
 
@@ -87,14 +86,13 @@ export function VoiceBar({ mode, playbackNode, micNode }: Props) {
         const s = samples[count - 1 - i]
         const x = width - BAR_W - i * STEP - offset
         if (x + BAR_W < 0) break
-        const amp = Math.max(FLOOR, s.level)
-        const up = Math.max(1, Math.round(amp * maxUp))
-        const down = Math.max(1, Math.round(amp * maxDown * REFLECTION))
-        const color = s.level <= FLOOR ? colors.floor : s.mode === 'speaking' ? colors.accent : colors.dim
+        if (s.level <= FLOOR) continue
+        const up = Math.max(1, Math.round(s.level * maxUp))
+        const down = Math.max(1, Math.round(s.level * maxDown * REFLECTION))
         ctx.globalAlpha = 1
-        ctx.fillStyle = color
+        ctx.fillStyle = s.mode === 'speaking' ? colors.accent : colors.dim
         ctx.fillRect(x, baseline - up, BAR_W, up)
-        ctx.globalAlpha = s.level <= FLOOR ? 0.35 : 0.3
+        ctx.globalAlpha = 0.3
         ctx.fillRect(x, baseline + 2, BAR_W, down)
       }
       ctx.globalAlpha = 1
