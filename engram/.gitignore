@@ -15,3 +15,7 @@ engrams/*/video/*.jpg
 
 # runtime output: memory cards written by /chat
 engrams/*/context/memory-*.md
+
+# shipped with the deploy: the prannay face clips
+!engrams/prannay/video/*.mp4
+!engrams/prannay/video/*.jpg

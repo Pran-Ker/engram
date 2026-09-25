@@ -1,110 +1,224 @@
-# Engram
+<h1 align="center">Engram</h1>
 
-A person you can stand in front of and talk to: their face, their voice, and their memories. Built at the Long Horizon Agents Hackathon (Sept 25, 2026) by Prannay Hebbar and Chinmay Hebbar.
+<p align="center">A person you can stand in front of and talk to: their face, their voice, and their memories.</p>
 
-- [`engram/`](engram/README.md): the app. Hono API on :4100, Vite + React stage on :4173. Read [`engram/docs/CONTRACTS.md`](engram/docs/CONTRACTS.md) first.
-- [`voice/`](voice/README.md): fine-tuning Liquid's LFM2.5-Audio on Prannay's voice (record on the Mac, train and serve on Modal).
-- [`hackathon/`](hackathon/): sponsor smoke test (`npm run check`).
-- [`dashboard/`](dashboard/README.md): the direct-mode front door. Type a name and a profile link (plus a photo), Nimble researches the person, FLUX 3 renders a talking clip, and one click posts the result to `POST /api/direct/engrams` so the person appears on the stage. Python, stdlib server on :8765.
+<p align="center">
+  <code>Long Horizon Agents Hackathon · Sept 25, 2026</code> ·
+  <a href="engram/README.md">app docs</a> ·
+  <a href="engram/docs/api.md">API</a> ·
+  <a href="engram/docs/adding-an-engram.md">add a person</a> ·
+  <a href="voice/README.md">voice</a> ·
+  <a href="dashboard/README.md">dashboard</a>
+</p>
 
-## Hackathon notes: Long Horizon Agents Hackathon, Sept 25 2026
+<p align="center">
+  <img src="docs/img/stage.gif" width="880" alt="The Engram stage: a typed question, Who are you?, is answered by a talking portrait of Prannay Hebbar while the spoken sentence turns orange in the transcript.">
+</p>
 
-Tokens& hackathon at DG717, San Francisco.
+**Figure 1.** One turn on the stage. You press `/`, type a question, and the face switches to the talking loop while the sentence being spoken lights up orange in the transcript.
 
-**Brief:** Ship long horizon agents that plan, act, observe, and self-correct across a full build cycle (spec, implementation, testing, iteration) without drowning in their own history. Use 3+ sponsor tools.
+You press start, ask a question out loud, and the person on screen answers in their own voice about a second and a half later. The words come from a folder of Markdown cards about them. When the question needs fresh facts, a live web search fills in the gap and writes what it found back into the folder as a new card. Every turn goes to a database that the agent reads back instead of carrying its history in context.
 
-**Deadline:** project submission 4:30 PM PT at https://bit.ly/long-horizon-hack (one project per team, up to 4 people). Judging 4:45, finalists 6:00, awards 7:00. Everyone must be registered on Luma + AWS Builder (http://events.builder.aws.com/d/xdz2bp).
+One engram is one folder: `engram.json`, `context/*.md`, `photos/`, `video/`. Adding a person is adding a folder. This repo ships one, `prannay`, built by Prannay Hebbar and Chinmay Hebbar in a day.
 
-**Judging criteria**
+## How it fits together
 
-| Criterion | Question |
+```mermaid
+flowchart LR
+  subgraph browser["web/ · Vite + React on :4173"]
+    stage["EngramPage.tsx<br/>the stage"]
+    bank["ContextBank.tsx"]
+    inspect["InspectPage.tsx"]
+  end
+
+  subgraph api["server/ · Hono API on :4100"]
+    chat["routes/chat.ts<br/>SSE tokens and sentences"]
+    tts["routes/tts.ts<br/>streamed PCM"]
+    ctx["routes/context.ts<br/>cards, Ask the web"]
+    insp["routes/inspect.ts"]
+  end
+
+  subgraph folder["engrams/prannay/"]
+    cards["context/*.md"]
+    video["video/idle.mp4<br/>video/talk.mp4"]
+  end
+
+  subgraph sponsors["One real call each"]
+    liquid["Liquid LFM2.5-1.2B<br/>Ollama, local"]
+    modal["Liquid LFM2.5-Audio-1.5B<br/>Modal"]
+    nimble["Nimble Search"]
+    rawtree["Tinybird RawTree<br/>lh_engram_events"]
+    bfl["Black Forest Labs<br/>FLUX 2 Pro, FLUX 3 Video"]
+  end
+
+  stage --> chat & tts & video
+  bank --> ctx
+  inspect --> insp
+  chat --> cards & liquid & nimble
+  ctx --> nimble
+  tts --> modal
+  chat & tts --> rawtree
+  insp --> rawtree
+  bfl -. "pipelines/video/build.ts, offline" .-> video
+```
+
+**Figure 2.** The browser talks only to the API. The API reads the engram folder, calls one sponsor per job, and logs every turn to RawTree, which the Inspect page reads back. The video pipeline runs offline and writes the face clips into the same folder.
+
+## What the stage answers
+
+Real transcripts from `POST /api/engrams/prannay/chat`, taken while writing this page. The brain runs at a low temperature with a fixed seed, so the same wording gives the same answer, and the audio for each sentence is cached after the first ask.
+
+> **Q** Who are you?
+>
+> **A** Prannay Hebbar. I'm 25, I do post-training research for agents, and I've been a founding engineer at two AI labs. Right now I'm starting my own company out of San Francisco.
+
+> **Q** What are you working on right now?
+>
+> **A** Right now I'm at the Long Horizon Agents hackathon in San Francisco, demoing Engram: a talking version of me with my face, my voice, and my memories, built on Liquid, Black Forest Labs, Nimble and Tinybird. I left Hexo in July 2026 to start a company, and I'm raising a seed round.
+
+> **Q** Where did you go to school?
+>
+> **A** I did my undergrad at VIT in Vellore, India, computer science and business systems, then a summer semester at Stanford in 2024: convex optimization with Stephen Boyd and high performance computing.
+
+> **Q** How long were you at Hexo?
+>
+> **A** About seven months, December 2025 to July 2026.
+
+> **Q** What do you think about AI safety?
+>
+> **A** I take the long-term risk seriously, but most of the discourse is stuck on distant existential scenarios. The useful work is making the capability development happening right now go right.
+
+> **Q** Tell me the Uhaul story.
+>
+> **A** Dallas wasn't enough. I set my deadline to leave as the day of the Stanford Codex hackathon, packed everything into a Uhaul, drove to SF and lived in hostels. That's the real inflection point in my story, not any paper.
+
+Off-script questions are answered from the context cards by a 1.2B model. It stays close on facts the cards state plainly and drifts on open-ended ones. An embedding router matches a question against a bank of Q&A pairs written in Prannay's voice first, and the model abstains rather than guessing when nothing matches.
+
+## The face
+
+Six photos from a camera roll went in. FLUX 2 Pro turned them into a studio portrait, FLUX Kontext blackened the backdrop to the page color, and FLUX 3 Video turned the portrait into two loops: idle and talking. The stage crossfades between them.
+
+<p align="center">
+  <img src="docs/img/loops.gif" width="680" alt="Two side-by-side loops of the same portrait: idle on the left with small breathing movement, talking on the right with the mouth moving.">
+</p>
+
+**Figure 3.** Idle loop on the left, talking loop on the right. The talking loop was re-rendered with a locked-off camera so the face stays the same size across the loop and the crossfade does not pop.
+
+<p align="center">
+  <img src="docs/img/scale-check.jpg" width="880" alt="Six frames at 0, 3, and 6 seconds of the idle and talk clips, each with a green face box and measured face scale and eye offset.">
+</p>
+
+**Figure 4.** Scale check written by the video pipeline: frames at 0, 3, and 6 seconds of both loops with the detected face box. Face scale stays within 3 percent, which is what makes the switch between loops invisible.
+
+Every render, with its prompt, parameters, task id, and cost, is one line in `engram/pipelines/video/runs.jsonl`.
+
+## The stage
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/img/stage-idle.jpg" alt="Stage idle: the portrait fills the screen under the name, with the orange start button, a hairline voice bar, and an empty transcript column."></td>
+    <td width="50%"><img src="docs/img/stage-speaking.jpg" alt="Stage speaking: orange voice bars, the question pinned at the top of the transcript, and the current sentence in orange."></td>
+  </tr>
+  <tr>
+    <td><b>Idle.</b> Start button, hairline voice bar, transcript column. The text input stays hidden until you press <code>/</code>.</td>
+    <td><b>Speaking.</b> The voice bar draws the playback waveform. The sentence being spoken is orange.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/img/context-bank.jpg" alt="Context bank panel with an Ask the web field at the top and cards grouped by section, Live from the web first."></td>
+    <td width="50%"><img src="docs/img/inspect.jpg" alt="Inspect page: turn list on the left, waveform with aligned words and video frames in the middle, loss and voice charts and a distill queue at the bottom."></td>
+  </tr>
+  <tr>
+    <td><b>Context bank</b> (<code>]</code>). The cards the brain answers from. Cards used in the last answer get an orange left border; live Nimble results sit at the top.</td>
+    <td><b>Inspect</b> (<code>I</code>). DevTools for a person: every turn from RawTree, a waveform you drag across to flag a voice region, and the fine-tune loss curves.</td>
+  </tr>
+</table>
+
+**Figure 5.** The four screens. Space starts and pauses, `[` opens the list of engrams, `]` the context bank, `/` the text input, `I` the Inspect page, and Esc closes panels.
+
+What happens on one turn:
+
+1. The browser sends the transcript to `POST /api/engrams/:slug/chat`.
+2. The server picks the most relevant cards, adds the persona, and streams tokens from Ollama over Server-Sent Events. If the question needs fresh facts, it first says a short filler sentence and runs a Nimble search.
+3. On each sentence boundary the browser opens `POST /api/engrams/:slug/tts/stream` and plays the PCM as it arrives, so speech starts while the model is still writing.
+4. When the answer ends, the server writes a memory card for the session and logs the turn to RawTree.
+
+| Moment | Fresh question | Cached question |
+|---|---|---|
+| First draft text on screen | 0.4 to 0.6 s | 0.4 to 0.6 s |
+| First spoken word | 2.7 to 3.3 s | about 1.4 s |
+| Web question, filler starts | 0.7 s | |
+| Web question, answer starts | about 8 s | |
+
+Timings measured on the stage on Sept 25, 2026. Voice generation runs at about 0.8x real time on Modal, so streaming with a head-start buffer is what makes it feel live.
+
+## The four sponsors
+
+Every sponsor is a real call in the request path, not a logo.
+
+| Sponsor | What it does here | Where |
+|---|---|---|
+| Liquid AI | Brain: `LFM2.5-1.2B-Instruct` runs locally through Ollama and answers as the person. Voice: `LFM2.5-Audio-1.5B`, streamed sentence by sentence from Modal, with a fine-tune on the person's recordings behind it. | `engram/server/lib/liquid.ts`, `voice/` |
+| Black Forest Labs | Face: `flux-2-pro` for the portrait, `flux-kontext-pro` for the backdrop, `flux-3-video` for the idle and talking loops. | `engram/pipelines/video/` |
+| Nimble | Live context: the **Ask the web** field in the context bank, and an automatic search when a question mentions today, the hackathon, news, or a date. | `engram/server/lib/nimble.ts` |
+| Tinybird RawTree | Memory and analytics: every utterance, first token, TTS call, fallback, and flag is a row in `lh_engram_events`. The Inspect page reads its turn list from there. | `engram/server/lib/rawtree.ts` |
+
+`GET /api/health` reports all four plus Ollama in one JSON object.
+
+| By the numbers | |
 |---|---|
-| Autonomy | How well does the agent act on the web using real-time data without manual intervention? |
-| Idea | Does it solve a meaningful problem or show real-world value? |
-| Technical implementation | How well is the architecture built and implemented? |
-| Tool use | Did it effectively use at least 3 sponsor tools? |
-| Presentation | 3-minute live demo (not a slide deck). |
+| FLUX renders to get one face | 39, for $23.39 |
+| Context cards in `engrams/prannay/context/` | 37 |
+| Q&A pairs in Prannay's voice | 282 |
+| First spoken word, cached question | about 1.4 s |
 
-## Project checklist
+## Run it
 
-- [x] Sponsor accounts, keys, `check.mjs` smoke test (Nimble, Liquid, BFL)
-- [x] **Voice personalization taken up**: fine-tune `LFM2.5-Audio-1.5B` on Prannay's voice — pipeline and status in [`voice/README.md`](voice/README.md)
-- [ ] Prannay records 45–90 min (`cd voice && make web`, browser recorder)
-- [ ] Train run `prannay-v1` on Modal and wire into Engram's `/tts`
+Before you start, you need Node 22, [Ollama](https://ollama.com), `ffmpeg`, `uv`, and the `modal` CLI. Keys live in `~/.local/secrets` and are never written into the repo: `NIMBLE_API_KEY`, `BFL_API_KEY`, `RAWTREE_API_KEY`, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`.
 
-## Sponsors we're using
+1. Pull the brain model into Ollama:
 
-| Sponsor | What it is | Prize | Status |
-|---|---|---|---|
-| **Nimble** | Real-time web search / page extraction API for agents | 1st $1,000 + 10k credits, 2nd $500 + 5k | Account + key done, 5,000 trial requests |
-| **Liquid AI** | Small LFM models that run locally on the laptop | Edge AI Kit (Orange Pi) + $250 | Running locally via Ollama |
-| **Black Forest Labs** | FLUX image + video generation API | $1,000 API credits per track (Image, Video, Action) | Account + key done, $100 sponsor credits loaded |
-| **Tinybird (RawTree)** | Schema-free analytics DB: POST JSON, tables auto-create, query with SQL | 1st $2,000, 2nd $1,000, 3rd $500 (Amazon gift cards) | Key done on the shared hackathon cluster, insert + query verified |
+   ```bash
+   ollama pull hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M
+   ```
 
-That's four. Tinybird has the biggest pool and RawTree fits the "agents that don't drown in their own history" theme well: log every agent step/tool call/test result as an event, then have the agent *query its own history* instead of carrying it in context.
+2. Deploy the voice service on Modal. This writes `voice/.tts-url`, which the API reads on each request:
 
-Not viable: **FLUX Action** track. It's an open-weights 7B robotics model, not an API, and needs a 32 GB Linux GPU. Stick to FLUX Image or FLUX Video.
+   ```bash
+   cd voice && make deploy && cd ..
+   ```
 
-## Setup
+3. Install and start both dev servers:
 
-Keys live in `~/.local/secrets` (never in this repo). Copy `hackathon/.env.example` if you need a local `.env`.
+   ```bash
+   source ~/.local/secrets
+   cd engram
+   npm install
+   npm run dev
+   ```
 
-```bash
-cd hackathon
-npm install
-source ~/.local/secrets
-npm run check      # smoke-tests all four sponsors, ✅/❌ per line
+   The API listens on `http://localhost:4100` and the web app on `http://localhost:4173`, which proxies `/api` to the API.
+
+4. Open `http://localhost:4173/e/prannay` and check `http://localhost:4100/api/health`. Every entry should read `"ok": true`.
+
+When you are done, run `make tts-stop` in `voice/`. The voice service keeps three L4 containers warm at about $2.40 per hour in total.
+
+To add a person, follow [Adding an engram](engram/docs/adding-an-engram.md). To skip the hand-written folder and build one from a research record plus a photo, see [direct mode](engram/docs/direct-mode.md) and the [dashboard](dashboard/README.md).
+
+## Repo layout
+
+```
+engram/       The app. server/ is the Hono API, web/ is the stage, engrams/<slug>/ is one person,
+              pipelines/video/ builds the face, docs/ holds the API reference and pipeline docs.
+voice/        LFM2.5-Audio fine-tune: browser recorder, Modal training app, TTS service.
+dashboard/    Direct-mode front door: Nimble research on a name, FLUX 3 talking clip, one click to the stage.
+hackathon/    Sponsor smoke test (npm run check), submission copy, and the day's notes.
+docs/img/     Media for this page.
 ```
 
-### Nimble
+## Read next
 
-- Console: https://online.nimbleway.com (Google login). Keys: Account → API Keys.
-- Env var: `NIMBLE_API_KEY`. Free tier 5,000 requests/month, no card.
-- SDK: `@nimble-way/nimble-js` (installed). Docs: https://docs.nimbleway.com/nimble-sdk/getting-started/quickstart
-
-```js
-import Nimble from "@nimble-way/nimble-js";
-const nimble = new Nimble({ apiKey: process.env.NIMBLE_API_KEY });
-const s = await nimble.search({ query: "…", max_results: 5 });
-const page = await nimble.extract.run({ url: "https://…", render: true, formats: ["markdown"] });
-```
-
-- MCP for Claude Code (already registered on Prannay's machine):
-  `claude mcp add --transport http nimble-mcp-server https://mcp.nimbleway.com/mcp --header "Authorization: Bearer $NIMBLE_API_KEY"`
-- Cookbook ideas: https://www.nimbleway.com/cookbooks (fact-checker, live-docs Q&A, competitor monitor).
-
-### Liquid AI
-
-- No account or key. Models are open weights on https://huggingface.co/LiquidAI (LFM Open License, free under $10M revenue).
-- Local via Ollama: `ollama pull hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M`, then hit `http://localhost:11434/api/chat` (OpenAI-compatible at `/v1/chat/completions`).
-- The 8B MoE `ollama run lfm2.5` (tool calling, 128K ctx) needs Ollama ≥ 0.17; update the Ollama app if you want it.
-- Fastest on Apple Silicon: `pip install mlx-lm && mlx_lm.server --model LiquidAI/LFM2.5-2.6B-MLX-8bit --port 8080`.
-- API fallback: OpenRouter `liquid/lfm-2.5-*` models — Liquid's rep said to look for the `:free` ones.
-- Vision: `LiquidAI/LFM2.5-VL-1.6B-GGUF` via `llama-server` or mlx-vlm. Docs: https://docs.liquid.ai
-
-### Black Forest Labs (FLUX)
-
-- Dashboard: https://dashboard.bfl.ai (Google login). Key: project → API → Keys. Env var: `BFL_API_KEY`.
-- **Credits:** no free tier. BFL is giving **$100/account** this week — post your BFL account email in the Discord thread *"BFL Account Emails for credits"* under #black-forest-lab (Maanav from BFL processes them). Ours is loaded.
-- Base URL `https://api.bfl.ai/v1`, header `x-key: $BFL_API_KEY`. Every call is async: POST → `{id, polling_url}` → GET the polling URL every ~2s until `status == "Ready"` → `result.sample` is a signed URL good for ~10 min.
-- Image endpoints: `/flux-2-klein-4b` ($0.014, fast), `/flux-2-pro` ($0.03), `/flux-kontext-pro` (editing). Video: `POST /flux-3-video` with `mode: t2v|i2v|v2v`, `duration` 5–20s, `resolution: hd`, HD is $0.17/sec so a 5s clip ≈ $0.85.
-- Open question in Discord: whether `flux-2-pro` is enabled for new accounts. `klein-4b` confirmed working.
-- MCP: `claude mcp add --transport http FLUX https://mcp.bfl.ai` (OAuth via `/mcp`). Docs: https://docs.bfl.ai, full index https://docs.bfl.ai/llms.txt
-
-### Tinybird / RawTree
-
-- Access via the hackathon invite https://tbrd.co/tokensand (Google login). If it says "Forbidden", retry once or find bno (Tinybird) at the back. Console: https://rawtree.com/tokensand
-- **Shared cluster.** Every team is in org `tokensand`, cluster `long-horizon-agents-hack`, database `default`. Creating a database needs an admin key, which we deliberately don't hold. So: **prefix all our tables with `lh_`** and never drop tables you didn't create.
-- Env vars: `RAWTREE_API_KEY` (starts `rt_`), `RAWTREE_ORG=tokensand`, `RAWTREE_CLUSTER=long-horizon-agents-hack`. Keys: cluster → API keys → Create (read_write is enough).
-- CLI `rtree` (installed via `curl -fsSL https://rawtree.com/install.sh | bash`, lands in `~/.cargo/bin`):
-  ```bash
-  rtree insert --table lh_events --database default --data '[{"step":1,"action":"plan"}]'
-  rtree query --database default "SELECT action, count() FROM lh_events GROUP BY action"
-  ```
-- HTTP: `POST https://api.rawtree.com/v1/tables/<table>` with a JSON array body inserts (table auto-created, columns dynamic); `POST /v1/query` with `{"sql": "...", "format": "JSON"}`. Header `Authorization: Bearer $RAWTREE_API_KEY`, optional `x-rawtree-database`. SQL is ClickHouse dialect and read-only.
-- Node SDK `@rawtree/sdk` (installed): `new RawTree({ apiKey, database: "default" })` → `.insert({ table, values })` / `.query({ sql })`. No Python SDK; use `requests`.
-- MCP (registered in Claude Code): `claude mcp add --transport http rawtree https://mcp.rawtree.com/mcp --header "Authorization: Bearer $RAWTREE_API_KEY"`. Agent skills: `npx skills add rawtreedb/agent-skills`. Docs: https://rawtree.com/docs, OpenAPI https://api.rawtree.com/v1/openapi.json
-
-## Discord
-
-Server: Tokens& Hackathon. Channels under "Sept. 25 - Long Horizon Agents Hack": `#nimble`, `#liquidai`, `#black-forest-lab` (+ credits thread), `#tinybird`. Organizers: `#ask-organizers` (Fatima Lopez, Andy Tran). Sponsor reps in the room: Viviana (Liquid), Maanav / Freddy (BFL), bno (Tinybird).
+- [App docs](engram/README.md): the stage, the Inspect page, the review loop, and the demo script.
+- [Adding an engram](engram/docs/adding-an-engram.md): the folder contract, recording a voice, and building a face.
+- [API reference](engram/docs/api.md): every route with request and response shapes.
+- [Video pipeline](engram/docs/video-pipeline.md) and [voice pipeline](engram/docs/voice-pipeline.md): how the face and the voice are made.
+- [Hackathon notes](hackathon/NOTES.md): sponsor setup, keys, judging criteria.
