@@ -10,6 +10,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@nimble-way/nimble-js": "^1.5.0"
+    "@nimble-way/nimble-js": "^1.5.0",
+    "@rawtree/sdk": "^0.2.1"
   }
 }

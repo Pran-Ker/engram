@@ -51,6 +51,28 @@ async function checkLiquid() {
   }
 }
 
-await Promise.all([checkNimble(), checkBFL(), checkLiquid()]);
+async function checkRawTree() {
+  const key = process.env.RAWTREE_API_KEY;
+  if (!key) return fail("RawTree", "RAWTREE_API_KEY not set");
+  // Shared hackathon cluster: everyone is in the `default` database, so prefix our tables with lh_.
+  const db = process.env.RAWTREE_DATABASE ?? "default";
+  try {
+    const H = { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "x-rawtree-database": db };
+    const ins = await fetch("https://api.rawtree.com/v1/tables/lh_healthcheck", {
+      method: "POST", headers: H, body: JSON.stringify([{ ts: new Date().toISOString(), ok: true }]),
+    });
+    if (!ins.ok) throw new Error(`insert HTTP ${ins.status} ${await ins.text()}`);
+    const q = await fetch("https://api.rawtree.com/v1/query", {
+      method: "POST", headers: H, body: JSON.stringify({ sql: "SELECT count() AS n FROM lh_healthcheck", format: "JSON" }),
+    });
+    if (!q.ok) throw new Error(`query HTTP ${q.status} ${await q.text()}`);
+    const j = await q.json();
+    ok("RawTree", `db "${db}" insert+query OK, ${j.data?.[0]?.n ?? "?"} rows in lh_healthcheck`);
+  } catch (e) {
+    fail("RawTree", e.message);
+  }
+}
+
+await Promise.all([checkNimble(), checkBFL(), checkLiquid(), checkRawTree()]);
 console.log(results.join("\n"));
 process.exit(results.some((r) => r.startsWith("❌")) ? 1 : 0);
