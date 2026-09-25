@@ -1,0 +1,94 @@
+.stage-display {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage-frame {
+  position: relative;
+  width: min(100cqw, 100cqh * 16 / 9);
+  aspect-ratio: 16 / 9;
+  mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 12%, #000);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
+    linear-gradient(to bottom, transparent, #000 12%, #000);
+  -webkit-mask-composite: source-in;
+}
+
+.stage-video,
+.stage-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+.stage-video[data-visible='true'],
+.stage-poster[data-visible='true'] { opacity: 1; }
+
+.stage-presence {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 600ms var(--ease-out);
+  background:
+    radial-gradient(ellipse 34% 46% at 50% 56%, rgba(255, 106, 61, 0.10), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 50% 60%, #15151a, transparent 75%);
+}
+.stage-presence[data-visible='true'] { opacity: 1; }
+.stage-presence::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 240px;
+  height: 240px;
+  margin: -120px 0 0 -120px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 0 0 40px rgba(38, 38, 42, 0.25), 0 0 120px 20px rgba(255, 106, 61, 0.05) inset;
+  animation: breathe 6s ease-in-out infinite;
+}
+.stage-presence[data-speaking='true']::after {
+  border-color: var(--accent-soft);
+  animation-duration: 2.4s;
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+.stage-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fg-2);
+  animation: note-in var(--dur-3) var(--ease-out);
+}
+@keyframes note-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.stage-note code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-1);
+  background: var(--bg-2);
+  padding: 2px 6px;
+  border-radius: var(--r-1);
+}

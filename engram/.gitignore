@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+*.log
+review/*.wav
+review/*.mp4
+review/*.jpg
+review/*.png
+engrams/*/photos/*
+!engrams/*/photos/.gitkeep
+engrams/*/video/*.mp4
+engrams/*/video/*.jpg
+.snapshots/
+.crawls/

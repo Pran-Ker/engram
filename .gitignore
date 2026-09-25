@@ -6,3 +6,14 @@ node_modules/
 .crawls/
 .DS_Store
 *.log
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# large or personal outputs (kept local)
+voice/data/
+voice/checkpoints/
+engram/review/
+engram/pipelines/video/work/

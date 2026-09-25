@@ -1,0 +1,9 @@
+# recordings, datasets, checkpoints, generated audio: large / personal, never committed
+data/
+samples/
+checkpoints/
+.venv/
+__pycache__/
+*.wav
+*.pyc
+.tts-url
