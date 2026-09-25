@@ -2,14 +2,15 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
 import { loadManifest } from '../lib/engram-store.ts'
-import { sortedCards, writeCard } from '../lib/cards.ts'
-import { streamChat, DEFAULT_MODEL, warmModel, type OllamaStats } from '../lib/liquid.ts'
+import { writeCard } from '../lib/cards.ts'
+import { streamChat, complete, DEFAULT_MODEL, warmModel, type OllamaStats } from '../lib/liquid.ts'
 import { streamChat as streamOpenRouter } from '../lib/direct/openrouter.ts'
-import { buildTurn, pickCards, stripMarkdown, tokenize } from '../lib/prompt.ts'
+import { ABSTAIN, buildTurn, isAbstain, pickCards, stripMarkdown, tokenize, unknownFacts } from '../lib/prompt.ts'
+import { bank, matchQuestion, QA_THRESHOLD } from '../lib/router.ts'
 import { searchWeb, type WebResult } from '../lib/nimble.ts'
 import { logEvent } from '../lib/rawtree.ts'
 import { writeLiveCards } from './context.ts'
-import type { ChatEvent, ChatMessage, ContextCard } from '../../shared/types.ts'
+import type { ChatEvent, ChatMessage, ContextCard, EngramManifest } from '../../shared/types.ts'
 
 export const chat = new Hono()
 
@@ -25,6 +26,9 @@ const THROWAWAY_SESSIONS = /^(test|curl|bench)/i
 const MEMORY_ON = process.env.ENGRAM_MEMORY !== 'off'   // ENGRAM_MEMORY=off: never write memory cards (demo safety)
 const WEB_TIMEOUT_MS = 6000
 const SENTENCE_END = /(?<!\b[A-Z])[.!?]["')\]]*(?=\s|$)/g
+const SENTENCE_END_FIRST = /(?<!\b[A-Z])[.!?]["')\]]*(?=\s|$)/
+const CLAUSE_END = /[,;](?=\s)/g
+const CLAUSE_WORDS = 7
 const WEB_TRIGGERS = /\b(today|tonight|yesterday|tomorrow|latest|news|recent(ly)?|this (week|month|year|morning)|hackathon|weather|forecast|stock|price|score|happening|announced|released|launched|update|schedule|agenda|202[6-9])\b/i
 
 chat.post('/:slug/chat', async (c) => {
@@ -39,26 +43,42 @@ chat.post('/:slug/chat', async (c) => {
 
   const started = Date.now()
   const turnId = randomUUID()
-  const cards = sortedCards(slug)
-  const wantsWeb = needsWeb(question, cards, manifest.name)
   const model = manifest.brain.model || DEFAULT_MODEL
-  const brain = manifest.brain.provider === 'openrouter' ? streamOpenRouter : streamChat  // direct engrams answer via OpenRouter
   logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'user_utterance', chars: question.length, text: question })
+  const [qaBank, { vector, best }] = await Promise.all([bank(slug), matchQuestion(slug, question)])
+  const cards = qaBank.cards
+  const hit = best && best.similarity >= QA_THRESHOLD ? best : undefined
 
   return streamSSE(c, async (stream) => {
     const send = (event: ChatEvent) => stream.writeSSE({ data: JSON.stringify(event) })
-    const splitter = sentenceSplitter()
     const spoken: string[] = []
     const say = (text: string) => {
       spoken.push(text)
       return send({ type: 'sentence', index: spoken.length - 1, text })
     }
+
+    if (hit) {
+      await send({ type: 'context', cards: [hit.pair.cardId] })
+      await send({ type: 'token', text: hit.pair.a })
+      const splitter = sentenceSplitter()
+      for (const fragment of [...splitter.push(hit.pair.a), ...splitter.flush()]) await say(fragment)
+      const latencyMs = Date.now() - started
+      await send({ type: 'done', turnId, text: hit.pair.a, latencyMs })
+      console.log(`[chat] qa route, similarity ${hit.similarity.toFixed(3)} "${hit.pair.q}", total ${latencyMs}ms`)
+      logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_done', ms: latencyMs, chars: hit.pair.a.length, provider: 'qa-bank', text: hit.pair.a, meta: { route: 'qa', similarity: hit.similarity, matched: hit.pair.q, cards: [hit.pair.cardId], sentences: spoken.length } })
+      return
+    }
+
+    const wantsWeb = needsWeb(question, cards, manifest.name)
+    const brain = manifest.brain.provider === 'openrouter' ? streamOpenRouter : streamChat
+    const exclude = [memoryId(sessionId)]
     let firstTokenAt = 0
     let live: WebResult | undefined
     let stats: OllamaStats = {}
+    let factcheck: Factcheck = 'ok'
 
     if (wantsWeb) {
-      await send({ type: 'context', cards: pickCards(cards, question, [memoryId(sessionId)]).map((c) => c.id), live: { query: question, urls: [] } })
+      await send({ type: 'context', cards: pickCards(cards, question, exclude, qaBank, vector).map((c) => c.id), live: { query: question, urls: [] } })
       const filler = FILLERS[Math.floor(Math.random() * FILLERS.length)]
       await send({ type: 'token', text: `${filler} ` })
       await say(filler)
@@ -74,25 +94,67 @@ chat.post('/:slug/chat', async (c) => {
       if (live) logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'context_web', ms: Date.now() - started, chars: live.hits.length, text: live.query, meta: { urls: live.hits.map((h) => h.url) } })
       if (live) try { writeLiveCards(slug, manifest.name, question, live) } catch {}
     }
-    const { messages: turn, used } = buildTurn(manifest, cards, messages, question, live, [memoryId(sessionId)])
+    const { messages: turn, used } = buildTurn(manifest, cards, messages, question, qaBank, vector, live, exclude)
     await send({ type: 'context', cards: used, live: live && { query: live.query, urls: live.hits.map((h) => h.url) } })
+    const known = knownText(manifest, cards, question, live)
+    const fillers = spoken.length
 
     const abort = new AbortController()
     c.req.raw.signal.addEventListener('abort', () => abort.abort())
+    let sentences = 0
+    let held = ''
+    let pendingFirst: string[] = []
+    const emit = async (fragment: string) => {
+      if (held) await send({ type: 'token', text: held })
+      held = ''
+      await say(fragment)
+      if (endsSentence(fragment)) sentences++
+    }
+    // hold the first sentence's clauses until it ends, so a failed check never leaves half a sentence spoken
+    const deliver = async (fragment: string) => {
+      if (sentences >= MAX_SENTENCES) return true
+      const firstOpen = sentences === 0 && !endsSentence(fragment)
+      if (firstOpen) { pendingFirst.push(fragment); return true }
+      const check = sentences === 0 ? [...pendingFirst, fragment].join(' ') : fragment
+      const unknown = isAbstain(check) ? [] : unknownFacts(check, known)
+      if (unknown.length) {
+        console.log(`[chat] factcheck failed on "${check}": ${unknown.join(', ')}`)
+        return false
+      }
+      for (const held of pendingFirst) await emit(held)
+      pendingFirst = []
+      await emit(fragment)
+      return true
+    }
     try {
+      const splitter = sentenceSplitter()
       const stream = brain === streamChat ? streamChat(model, turn, abort.signal, (s) => { stats = s }) : brain(model, turn, abort.signal)
+      let ok = true
       for await (const raw of stream) {
-        const token = raw.replace(/[*#`]/g, '').replace(/\s*[—–]\s*|\s+-\s+/g, ', ').replace(/\n+/g, ' ')
+        const token = cleanToken(raw)
         if (!token) continue
         if (!firstTokenAt) {
           firstTokenAt = Date.now()
           logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_first_token', ms: firstTokenAt - started, provider: model, meta: { web: !!live } })
         }
-        await send({ type: 'token', text: token })
-        for (const sentence of splitter.push(token)) if (spoken.length < MAX_SENTENCES) await say(sentence)
-        if (spoken.length >= MAX_SENTENCES) break
+        held += token
+        for (const fragment of splitter.push(token)) ok = ok && await deliver(fragment)
+        if (!ok || sentences >= MAX_SENTENCES) break
       }
-      if (!spoken.length || (spoken.length < MAX_SENTENCES && /[.!?]["')\]]*$/.test(splitter.peek()))) for (const sentence of splitter.flush()) await say(sentence)
+      if (ok && (spoken.length === fillers || (sentences < MAX_SENTENCES && /[.!?]["')\]]*$/.test(splitter.peek())))) for (const fragment of splitter.flush()) ok = ok && await deliver(fragment)
+      if (ok && pendingFirst.length) ok = await deliver(`${pendingFirst.pop()}.`)
+      abort.abort()
+      if (!ok && spoken.length > fillers) factcheck = 'cut'
+      if (!ok && spoken.length === fillers) {
+        const retry = cleanToken((await complete(model, turn, c.req.raw.signal, { temperature: 0.05 })).text)
+        const unknown = isAbstain(retry) ? [] : unknownFacts(retry, known)
+        factcheck = unknown.length ? 'abstain' : 'regen'
+        const text = unknown.length ? ABSTAIN : retry
+        if (unknown.length) console.log(`[chat] factcheck failed again on "${retry}": ${unknown.join(', ')}`)
+        await send({ type: 'token', text })
+        const again = sentenceSplitter()
+        for (const fragment of [...again.push(text), ...again.flush()]) if (sentences < MAX_SENTENCES) { await say(fragment); if (endsSentence(fragment)) sentences++ }
+      }
     } catch (e) {
       if (!abort.signal.aborted) await send({ type: 'error', message: (e as Error).message })
     }
@@ -102,28 +164,47 @@ chat.post('/:slug/chat', async (c) => {
     const latencyMs = Date.now() - started
     const firstTokenMs = firstTokenAt ? firstTokenAt - started : null
     await send({ type: 'done', turnId, text, latencyMs })
-    console.log(`[chat] first token ${firstTokenMs ?? '-'}ms, prompt ${stats.promptTokens ?? '-'} tok in ${stats.promptEvalMs ?? '-'}ms, ${stats.evalTokens ?? '-'} tok out in ${stats.evalMs ?? '-'}ms, total ${latencyMs}ms${live ? ', web' : ''}`)
-    logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_done', ms: latencyMs, chars: text.length, provider: model, text, meta: { cards: used, firstTokenMs, sentences: spoken.length, web: live?.query ?? null, ...stats } })
-    if (text && MEMORY_ON) setImmediate(() => saveMemory(slug, sessionId, messages, text, cards, used))
+    console.log(`[chat] llm route, first token ${firstTokenMs ?? '-'}ms, prompt ${stats.promptTokens ?? '-'} tok in ${stats.promptEvalMs ?? '-'}ms, ${stats.evalTokens ?? '-'} tok out in ${stats.evalMs ?? '-'}ms, factcheck ${factcheck}, total ${latencyMs}ms${live ? ', web' : ''}${best ? `, nearest qa ${best.similarity.toFixed(3)}` : ''}`)
+    logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'chat_done', ms: latencyMs, chars: text.length, provider: model, text, meta: { route: 'llm', similarity: best?.similarity ?? null, factcheck, cards: used, firstTokenMs, sentences: spoken.length, web: live?.query ?? null, ...stats } })
+    if (text && MEMORY_ON && factcheck === 'ok') setImmediate(() => saveMemory(slug, sessionId, messages, text, cards, used))
   })
 })
 
+type Factcheck = 'ok' | 'regen' | 'abstain' | 'cut'
+
+const cleanToken = (raw: string) => raw.replace(/[*#`]/g, '').replace(/\s*[—–]\s*|\s+-\s+/g, ', ').replace(/\n+/g, ' ')
+
+const endsSentence = (fragment: string) => /[.!?]["')\]]*$/.test(fragment)
+
+const knownText = (manifest: EngramManifest, cards: ContextCard[], question: string, live?: WebResult) =>
+  [manifest.name, manifest.brain.persona, question, ...cards.map((c) => `${c.title} ${c.body}`), live?.answer ?? '', ...(live?.hits.map((h) => `${h.title} ${h.snippet}`) ?? [])].join('\n')
+
 function sentenceSplitter() {
   let pending = ''
+  let first = true
   const cut = (s: string) => stripMarkdown(s)
   return {
     push(token: string): string[] {
       pending += token
       const out: string[] = []
-      let match: RegExpExecArray | null
       let consumed = 0
-      SENTENCE_END.lastIndex = 0
+      if (first) {
+        const clause = clauseCut(pending)
+        if (clause > 0) {
+          out.push(cut(pending.slice(0, clause)))
+          consumed = clause
+          first = false
+        }
+      }
+      let match: RegExpExecArray | null
+      SENTENCE_END.lastIndex = consumed
       while ((match = SENTENCE_END.exec(pending))) {
         const end = match.index + match[0].length
         const candidate = pending.slice(consumed, end).trim()
         if (candidate.length < MIN_SENTENCE) continue
         out.push(cut(candidate))
         consumed = end
+        first = false
       }
       pending = pending.slice(consumed)
       return out.filter(Boolean)
@@ -131,10 +212,23 @@ function sentenceSplitter() {
     flush(): string[] {
       const rest = cut(pending)
       pending = ''
+      first = false
       return rest ? [rest] : []
     },
     peek: () => pending.trim(),
   }
+}
+
+// First sentence only: cut at the first comma or semicolon after 7+ words, unless a sentence ends first
+function clauseCut(text: string) {
+  const sentenceEnd = text.search(SENTENCE_END_FIRST)
+  CLAUSE_END.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = CLAUSE_END.exec(text))) {
+    if (sentenceEnd >= 0 && match.index > sentenceEnd) return -1
+    if (text.slice(0, match.index).trim().split(/\s+/).length >= CLAUSE_WORDS) return match.index + 1
+  }
+  return -1
 }
 
 function needsWeb(question: string, cards: ContextCard[], selfName: string) {

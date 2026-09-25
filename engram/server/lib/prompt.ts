@@ -1,15 +1,23 @@
 import type { ChatMessage, ContextCard, EngramManifest } from '../../shared/types.ts'
 import type { WebResult } from './nimble.ts'
+import { cardSimilarity, closestPairs, type Bank } from './router.ts'
+import { cosine } from './embed.ts'
 
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
-const MAX_CARDS = 4
-const CARD_CHARS = 300
-const NOTES_CHARS = 1400
-const VOICE_CHARS = 450
-const FEWSHOT_PAIRS = 3
-const HISTORY_TURNS = 4
-const RULES = 'Each question comes with notes about yourself. Use only what the notes say; if they do not cover it, say you do not know in one sentence. Never guess why things happened or speak for people and companies you worked with. When a note or an earlier answer already answers the question, repeat it as written. Answer out loud in one to three short sentences, each under twenty words, plain speech, no lists or markdown, never mention the notes. No dashes, semicolons or parentheses; use a comma or start a new sentence instead.'
+export const ABSTAIN = "I don't have that in my notes."
+const MAX_CARDS = 3
+const CARD_CHARS = 220
+const NOTES_CHARS = 700
+const VOICE_BULLETS = 2
+const VOICE_CHARS = 120
+const FEWSHOT_PAIRS = 5
+const FEWSHOT_CHARS = 400
+const ABSTAIN_BELOW = 0.5
+const ABSTAIN_EXAMPLE = { q: "What's your favorite movie?", a: ABSTAIN }
+const HISTORY_MESSAGES = 4
+const MIN_CARD_SIMILARITY = 0.25
+const RULES = `Each question comes with notes about yourself. Use only what the notes say. If none of the notes or examples answers the question, say exactly: ${ABSTAIN} Do not invent names, numbers, dates, places or opinions. When a note or example already answers the question, repeat it as written. Speak in one to three short sentences, under twenty words each, no lists or markdown, never mention the notes, no dashes or parentheses.`
 const STOPWORDS = new Set('the a an and or but of to in on at for with about from by as is are was were be been being am do does did have has had you your yours yourself i me my we our us he him his she her it its they them their this that these those what which who whom whose when where why how tell say said think feel know like just really very some any all can could would should will shall may might one thing things something anything right now there here than then too also into over out up down off so if not no yes'.split(' '))
 
 export const tokenize = (s: string) =>
@@ -22,57 +30,53 @@ const FORCED: [RegExp, (card: ContextCard) => boolean][] = [
   [/\bhexo\b/i, (c) => c.id.startsWith('work-03')],
 ]
 
-export function pickCards(cards: ContextCard[], question: string, excludeIds: string[] = []): ContextCard[] {
-  const asked = new Set(tokenize(question))
+export function pickCards(
+  cards: ContextCard[],
+  question: string,
+  excludeIds: string[],
+  bank: Bank,
+  vector: number[],
+): ContextCard[] {
   const facts = cards.filter((c) => c.section !== 'voice' && !excludeIds.includes(c.id))
   const forced = FORCED.flatMap(([re, match]) => (re.test(question) ? facts.filter(match) : []))
   const scored = facts
     .filter((c) => !forced.includes(c))
-    .map((card) => ({ card, score: relevance(card, asked) * (card.section === 'memory' ? 0.5 : 1) }))
-    .filter((s) => s.score > 0)
+    .map((card) => ({ card, score: cardSimilarity(bank, vector, card) * (card.section === 'memory' ? 0.8 : 1) }))
+    .filter((s) => s.score >= MIN_CARD_SIMILARITY)
     .sort((a, b) => b.score - a.score)
   const memories = scored.filter((s) => s.card.section === 'memory').slice(0, 1)
   const others = scored.filter((s) => s.card.section !== 'memory')
   const ranked = [...others, ...memories].sort((a, b) => b.score - a.score).map((s) => s.card)
-  const picked = [...forced, ...ranked].slice(0, MAX_CARDS)
+  const picked = [...new Set([...forced, ...ranked])].slice(0, MAX_CARDS)
   return picked.length ? picked : defaults(facts)
 }
 
-function relevance(card: ContextCard, asked: Set<string>) {
-  const title = tokenize(card.title)
-  const body = tokenize(card.body)
-  const titleHits = title.filter((w) => asked.has(w)).length
-  const bodyHits = new Set(body.filter((w) => asked.has(w))).size
-  return titleHits * 3 + bodyHits
-}
-
-// Fallback when the question matches nothing: the first profile card plus work-05 (the hand-built engram's
-// "what I'm doing now" card) or, for engrams without one, the first work card.
 const defaults = (cards: ContextCard[]) => [
   ...cards.filter((c) => c.id.startsWith('profile-01')),
   ...cards.filter((c) => c.id.startsWith('work-00')),
-  ...(cards.some((c) => c.id.startsWith('work-05')) ? cards.filter((c) => c.id.startsWith('work-05')) : cards.filter((c) => c.section === 'work' && !c.id.startsWith('work-00')).slice(0, 1)),
-]
+].slice(0, MAX_CARDS)
 
 export function buildTurn(
   manifest: EngramManifest,
   cards: ContextCard[],
   history: ChatMessage[],
   question: string,
+  bank: Bank,
+  vector: number[],
   live?: WebResult,
   excludeIds: string[] = [],
 ): { messages: PromptMessage[]; used: string[] } {
   const voice = cards.filter((c) => c.section === 'voice')
-  let facts = pickCards(cards, question, excludeIds)
+  let facts = pickCards(cards, question, excludeIds, bank, vector)
   let notes = renderNotes(manifest, facts, live)
   while (notes.length > NOTES_CHARS && facts.length > 1) {
     facts = facts.slice(0, -1)
     notes = renderNotes(manifest, facts, live)
   }
-  const prior = history.slice(0, -1).slice(-HISTORY_TURNS)
+  const prior = history.slice(0, -1).slice(-HISTORY_MESSAGES)
   const messages: PromptMessage[] = [
     { role: 'system', content: renderSystem(manifest, voice) },
-    ...fewShot(voice, question),
+    ...fewShot(bank, vector),
     ...prior,
     { role: 'user', content: `${today()}\n\n${notes}\n\n${question}` },
   ]
@@ -83,9 +87,10 @@ const today = () =>
   `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
 function renderSystem(manifest: EngramManifest, voice: ContextCard[]) {
+  const bullets = voice.map(renderVoice).filter(Boolean).slice(0, VOICE_BULLETS)
   return [
     manifest.brain.persona,
-    voice.length ? `How you talk:\n${voice.map(renderVoice).join('\n')}` : '',
+    bullets.length ? `How you talk:\n${bullets.join('\n')}` : '',
     RULES,
   ].filter(Boolean).join('\n\n')
 }
@@ -123,30 +128,26 @@ const PRONOUNS: [RegExp, string][] = [
 export const firstPerson = (text: string) =>
   PRONOUNS.reduce((out, [re, sub]) => out.replace(re, sub), text)
 
-const renderVoice = (card: ContextCard) =>
-  `- ${card.title}: ${cutAtSentence(compact(withoutExamples(card.body)), VOICE_CHARS)}`
+const renderVoice = (card: ContextCard) => {
+  const style = cutAtSentence(compact(withoutExamples(card.body)), VOICE_CHARS)
+  return style ? `- ${style}` : ''
+}
 
 const withoutExamples = (body: string) =>
   body.split('\n').filter((line) => !/^Q:\s/.test(line.trim())).join('\n')
 
-export function fewShot(cards: ContextCard[], question?: string): ChatMessage[] {
-  const lines = cards.filter((c) => c.section === 'voice').flatMap((c) => c.body.split('\n'))
-  const pairs = lines.flatMap((line) => {
-    const m = /^Q:\s*(.+?)\s+A:\s*(.+)$/.exec(line.trim())
-    return m ? [{ q: m[1], a: m[2] }] : []
-  })
-  const chosen = question ? closestPairs(pairs, question) : pairs
-  return chosen.flatMap(({ q, a }) => [{ role: 'user' as const, content: q }, { role: 'assistant' as const, content: a }])
-}
-
-function closestPairs(pairs: { q: string; a: string }[], question: string) {
-  const asked = new Set(tokenize(question))
-  return pairs
-    .map((pair, i) => ({ pair, i, score: tokenize(pair.q).filter((w) => asked.has(w)).length }))
-    .sort((a, b) => b.score - a.score || a.i - b.i)
-    .slice(0, FEWSHOT_PAIRS)
-    .sort((a, b) => a.i - b.i)
-    .map((s) => s.pair)
+export function fewShot(bank: Bank, vector: number[]): ChatMessage[] {
+  const pairs: { q: string; a: string }[] = []
+  let chars = 0
+  const closest = closestPairs(bank, vector, FEWSHOT_PAIRS)
+  const nearest = closest[0] ? cosine(vector, bank.pairVectors[bank.pairs.indexOf(closest[0])]) : 0
+  if (nearest < ABSTAIN_BELOW) pairs.push(ABSTAIN_EXAMPLE)
+  for (const pair of closest) {
+    chars += pair.q.length + pair.a.length
+    if (pairs.length && chars > FEWSHOT_CHARS) break
+    pairs.push(pair)
+  }
+  return pairs.reverse().flatMap(({ q, a }) => [{ role: 'user' as const, content: q }, { role: 'assistant' as const, content: a }])
 }
 
 function cutAtSentence(text: string, max: number) {
@@ -165,6 +166,23 @@ function renderLive(live: WebResult) {
     : live.hits.map((h) => `- ${h.title}: ${h.snippet}`)
   return `You just looked this up on the web (you already said you would check, so now just say what you found, no URLs):\n${lines.join('\n')}`
 }
+
+const PROPER_NOUN = /\b[A-Z][a-zA-Z0-9]{2,}\b/g
+const NUMBER = /\d[\d,.]*\d|\d/g
+const SENTENCE_START = /(^|[.!?]["')\]]*\s+)([A-Z][a-zA-Z0-9]*)(?!\s+[A-Z])/g
+
+export const isAbstain = (answer: string) => answer.trim().toLowerCase().startsWith(ABSTAIN.toLowerCase().slice(0, 12))
+
+export function unknownFacts(answer: string, knownText: string): string[] {
+  const known = knownText.toLowerCase()
+  const knownNumbers = new Set(known.match(NUMBER)?.map(normalizeNumber) ?? [])
+  const midSentence = answer.replace(SENTENCE_START, '$1')
+  const nouns = (midSentence.match(PROPER_NOUN) ?? []).filter((w) => !known.includes(w.toLowerCase()))
+  const numbers = (answer.match(NUMBER) ?? []).filter((n) => !knownNumbers.has(normalizeNumber(n)))
+  return [...new Set([...nouns, ...numbers])]
+}
+
+const normalizeNumber = (n: string) => n.replace(/[,.]+$/, '').replace(/,/g, '')
 
 export const stripMarkdown = (s: string) =>
   s

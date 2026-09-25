@@ -275,10 +275,19 @@ def main(
         print("train:", json.dumps(train.remote(dataset, run, epochs, batch_size, lr, max_steps), indent=2))
     if stage in ("synth", "all"):
         texts = [text] if text else DEFAULT_TEXTS
-        outs = synth.remote(run, texts, None if run != "base" else None)
         local = Path(__file__).resolve().parent / "samples" / run
         local.mkdir(parents=True, exist_ok=True)
-        for name, b in outs:
-            (local / name).write_bytes(b)
+        if run == "base" and system_prompt == SYSTEM_PROMPT:
+            # stock model: render every built-in voice so they can be compared (container stays warm across calls)
+            voices = {"us-male": "US male", "us-female": "US female", "uk-male": "UK male", "uk-female": "UK female"}
+            for tag, v in voices.items():
+                outs = synth.remote(run, texts, f"Perform TTS. Use the {v} voice.")
+                for name, b in outs:
+                    (local / f"{tag}-{name}").write_bytes(b)
+                print(f"synth: {tag}: {len(outs)} wav(s)")
+        else:
+            outs = synth.remote(run, texts, system_prompt if run == "base" else None)
+            for name, b in outs:
+                (local / name).write_bytes(b)
+            print(f"synth: wrote {len(outs)} wav(s) to {local}")
         (local / "texts.json").write_text(json.dumps(texts, indent=2))
-        print(f"synth: wrote {len(outs)} wav(s) to {local}")

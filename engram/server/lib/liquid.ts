@@ -22,8 +22,9 @@ export async function* streamChat(
   messages: PromptMessage[],
   signal?: AbortSignal,
   onStats?: (stats: OllamaStats) => void,
+  options: Partial<typeof OPTIONS> = {},
 ): AsyncGenerator<string> {
-  const body = { model, messages, stream: true, keep_alive: KEEP_ALIVE, options: OPTIONS }
+  const body = { model, messages, stream: true, keep_alive: KEEP_ALIVE, options: { ...OPTIONS, ...options } }
   const r = await fetch(`${OLLAMA_URL}/api/chat`, { method: 'POST', body: JSON.stringify(body), signal })
   if (!r.ok || !r.body) throw new Error(`ollama ${r.status}: ${await r.text()}`)
 
@@ -47,6 +48,18 @@ export async function* streamChat(
       return
     }
   }
+}
+
+export async function complete(
+  model: string,
+  messages: PromptMessage[],
+  signal?: AbortSignal,
+  options: Partial<typeof OPTIONS> = {},
+): Promise<{ text: string; stats: OllamaStats }> {
+  let stats: OllamaStats = {}
+  let text = ''
+  for await (const token of streamChat(model, messages, signal, (s) => { stats = s }, options)) text += token
+  return { text, stats }
 }
 
 const statsOf = (chunk: Chunk): OllamaStats => ({
