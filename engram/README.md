@@ -76,6 +76,10 @@ Every sponsor is a real call in the request path, not a logo.
 
 `GET /api/health` reports all four plus Ollama in one JSON object.
 
+## Two modes
+
+The folder above is the **hyper-personalized** path: hand-written notes, a fine-tuned voice, a face built from many photos. The same server also runs **direct avatar engrams**: `POST /api/direct/engrams` turns one research record (a lead-enrichment CSV row, say) plus one photo and an optional talking clip into a complete folder, answered by Liquid `LFM2.5` on OpenRouter instead of local Ollama. The stage, the context bank, live web lookups and event logging are shared; only the way the folder is made and which Liquid endpoint answers differ. See [`docs/direct-mode.md`](docs/direct-mode.md).
+
 ## Run it
 
 Before you start, you need Node 22, [Ollama](https://ollama.com), `ffmpeg`, `uv`, and the `modal` CLI. Keys live in `~/.local/secrets` and are never written into the repo: `NIMBLE_API_KEY`, `BFL_API_KEY`, `RAWTREE_API_KEY`, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`.
