@@ -11,6 +11,7 @@ help:
 	@echo "make setup        install local deps (uv)"
 	@echo "make devices      list microphones"
 	@echo "make record       guided sentence recording  (resumable)"
+	@echo "make web          browser recorder at http://127.0.0.1:4300  (PORT=, RAW_DIR=)"
 	@echo "make record-free  record a long free-talk take"
 	@echo "make transcribe   whisper + split free takes into clips"
 	@echo "make prepare      clean/normalize/resample + train/val split + stats"
@@ -32,6 +33,9 @@ devices:
 
 record:  # DEVICE=<index or name from make devices>, e.g. make record DEVICE="MacBook Pro Microphone"
 	$(PY) scripts/record.py $(if $(DEVICE),--device "$(DEVICE)",)
+
+web:
+	uv run python web/server.py
 
 record-free:
 	$(PY) scripts/record.py --free $(if $(DEVICE),--device "$(DEVICE)",)
@@ -66,7 +70,7 @@ smoke:
 	uv run modal volume put --force voice-data data/smoke/clean /smoke/clean
 	uv run modal run modal_app.py --stage all --dataset smoke --run smoke --epochs 1 --max-steps 3 --batch-size 2
 
-.PHONY: help setup devices record record-free transcribe prepare upload preprocess train synth all download smoke
+.PHONY: help setup devices record web record-free transcribe prepare upload preprocess train synth all download smoke
 
 clean-smoke:
 	uv run modal volume rm -r voice-data /smoke || true

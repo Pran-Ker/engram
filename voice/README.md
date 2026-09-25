@@ -11,8 +11,9 @@ Record on the Mac, train on Modal (A100-80GB, about an hour, a few dollars), ser
 - [x] Modal app (`modal_app.py`): preprocess (L4) → train (A100-80GB) → synth (L4); volumes `voice-data`, `voice-ckpt`, `voice-hf-cache`
 - [x] Reading prompts: `prompts/sentences.txt` (Paul Graham, *How to Do Great Work*, 733 lines ≈ 70 min)
 - [x] Local deps installed (`uv sync`), mic detected
+- [x] Web recorder (`make web`, `web/server.py` + `web/index.html`): follow-along highlighting, replay, auto-advance; built by a 7-agent workflow, 42 e2e checks green (Sept 25)
 - [x] Modal smoke test with synthetic audio (`make smoke`) passes end to end (Sept 25: preprocess → 3 train steps → synth, all OK)
-- [ ] **Prannay records** 45–90 min (`make record`, plus `make record-free` takes)
+- [ ] **Prannay records** 45–90 min (`make web`, plus `make record-free` takes)
 - [ ] `make prepare` reports ≥ 45 min clean audio
 - [ ] `make upload && make all` → run `prannay-v1` (≈ 1 h on A100)
 - [ ] Listen to `samples/prannay-v1/*.wav`; iterate (more data, more epochs) if needed
@@ -27,15 +28,19 @@ Full fine-tune of backbone + audio decoder + encoder + text embedder with `liqui
 ## Recording
 
 ```bash
-make devices                 # pick the mic index; use the same mic every session
-make record DEVICE="MacBook Pro Microphone"   # guided, one sentence at a time, resumable (Enter=record, Enter=stop, Enter=keep, r=redo, p=play)
-make record-free DEVICE="MacBook Pro Microphone"  # 5–10 min of free talk; repeat a few times
-make transcribe              # whisper (local, mlx) → clips at pauses → appended to data/raw/manifest.jsonl; skim transcripts
-make prepare                 # trim/normalize/24 kHz, 5 % val split, stats + readiness verdict → data/clean/
+make web                     # http://127.0.0.1:4300 in Chrome — the recorder
 ```
 
-Rules that matter: quiet room, same mic and distance, no music or other voices, read exactly what is shown, 2–14 s per clip.
+One screen: the sentence, large. Space records, words light up as Chrome's speech recognition hears them, and it stops on its own when the last word lands (or on silence, or Space).
+Enter keeps and arms the next sentence; R redoes; P replays; S skips; arrows move; `?` lists all keys. Top strip shows sentences done and minutes kept.
+Takes that clip, run over 14 s or under 1 s cannot be kept. If the server is unreachable the take is held in memory and re-sent on Retry; nothing is lost.
+Writes `data/raw/p####.wav` + `data/raw/manifest.jsonl`, the same files the CLI recorder writes, so everything below is unchanged.
+
+Rules that matter: quiet room, same mic and distance, no music or other voices, read exactly what is shown, natural pace.
 Target 45–90 min kept audio (≈ 400–800 clips). 20 min gives a rough first result.
+
+Other inputs: `make record-free` (5–10 min free talk) then `make transcribe` (local Whisper splits it into clips). `make record` is the terminal fallback if Chrome is unavailable.
+Then `make prepare` trims, normalizes to 24 kHz, splits 5 % val and prints a readiness verdict → `data/clean/`.
 
 ## Training and listening
 
@@ -59,7 +64,10 @@ Balance: **$30 credits** on Sept 25 2026 (dashboard, https://modal.com/settings/
 ```
 modal_app.py          Modal stages: check / preprocess / train / synth / all
 serve.py              Engram TTS web endpoint (owned by the Engram session)
-scripts/record.py     guided + free-talk recorder (48 kHz mono WAV)
+web/server.py         recorder backend (stdlib HTTP, port 4300, writes data/raw)
+web/index.html        recorder UI (single file, Chrome)
+web/qa/e2e.mjs        Playwright e2e with a fake mic (`node web/qa/e2e.mjs`)
+scripts/record.py     terminal recorder fallback + free-talk takes (48 kHz mono WAV)
 scripts/transcribe.py mlx-whisper transcription + splitting of free takes
 scripts/prepare_dataset.py  ffmpeg clean-up, 24 kHz, split, stats
 scripts/make_smoke_data.py  synthetic clips for `make smoke`

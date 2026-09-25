@@ -28,7 +28,7 @@ Tokens& hackathon at DG717, San Francisco.
 
 - [x] Sponsor accounts, keys, `check.mjs` smoke test (Nimble, Liquid, BFL)
 - [x] **Voice personalization taken up**: fine-tune `LFM2.5-Audio-1.5B` on Prannay's voice — pipeline and status in [`voice/README.md`](voice/README.md)
-- [ ] Prannay records 45–90 min (`cd voice && make record`)
+- [ ] Prannay records 45–90 min (`cd voice && make web`, browser recorder)
 - [ ] Train run `prannay-v1` on Modal and wire into Engram's `/tts`
 
 ## Sponsors we're using
