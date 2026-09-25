@@ -10,6 +10,7 @@ import { context } from './routes/context.ts'
 import { events } from './routes/events.ts'
 import { inspect } from './routes/inspect.ts'
 import { health } from './routes/health.ts'
+import { direct } from './routes/direct.ts'
 
 export const PORT = Number(process.env.PORT ?? 4100)
 
@@ -23,6 +24,7 @@ app.route('/api/engrams', context)   // GET /:slug/context, POST /:slug/context/
 app.route('/api/events', events)     // POST /, GET /
 app.route('/api/inspect', inspect)   // GET /:slug/runs, GET /:slug/turns, POST /:slug/flags ...
 app.route('/api/health', health)     // GET /
+app.route('/api/direct', direct)     // POST /engrams (record -> engram folder), GET /health  (direct avatar mode)
 
 // Review pages for Prannay: everything under review/ (clips, samples, batches).
 app.use('/review/*', serveStatic({ root: './' }))

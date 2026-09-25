@@ -33,7 +33,10 @@ engram/
   docs/              CONTRACTS.md (this), README at repo root, docs/*.md (docs)
 ```
 
-Ownership: a workstream edits only its files above plus new files it creates. `server/index.ts`, `package.json`, `shared/types.ts`, `web/src/main.tsx`, `web/src/tokens.css` are shared: append, never rewrite, and keep exports/routes compatible.
+    routes/direct.ts    POST /direct/engrams: research record -> engram folder   (direct mode)
+    lib/direct/         openrouter.ts, person.ts, video.ts                      (direct mode)
+
+Ownership: a workstream edits only its files above plus new files it creates. Direct mode (docs/direct-mode.md) is its own workstream: it owns `routes/direct.ts`, `lib/direct/`, and the direct-written card ids, and touches the shared path only through `brain.provider` in `chat.ts` and two optional manifest fields. `server/index.ts`, `package.json`, `shared/types.ts`, `web/src/main.tsx`, `web/src/tokens.css` are shared: append, never rewrite, and keep exports/routes compatible.
 
 ## Sponsors, where each is used (all four must be real calls, not logos)
 
@@ -65,6 +68,8 @@ All under `/api`. JSON unless stated. Errors: `{ error: string }` with a real st
 | GET `/events?engram=&since=&limit=` | | `EventRow[]` from RawTree |
 | GET `/inspect/:slug/runs` | | fine-tune runs + checkpoints + curves (see inspect) |
 | GET `/health` | | `Health` |
+| POST `/direct/engrams` | person record + `photo?`, `clip?` (data URI or URL) | writes `engrams/<slug>/` with `mode: direct`, `brain.provider: openrouter`; returns `{ slug, cards, video, url }` (direct mode, see docs/direct-mode.md) |
+| GET `/direct/health` | | OpenRouter key/model/last call for direct engrams |
 
 ## The stage (web `/` and `/e/:slug`)  — good-product profile: **calm**
 

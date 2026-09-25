@@ -33,9 +33,11 @@ function relevance(card: ContextCard, asked: Set<string>) {
   return titleHits * 3 + bodyHits
 }
 
+// Fallback when the question matches nothing: the first profile card plus work-05 (the hand-built engram's
+// "what I'm doing now" card) or, for engrams without one, the first work card.
 const defaults = (cards: ContextCard[]) => [
   ...cards.filter((c) => c.id.startsWith('profile-01')),
-  ...cards.filter((c) => c.id.startsWith('work-05')),
+  ...(cards.some((c) => c.id.startsWith('work-05')) ? cards.filter((c) => c.id.startsWith('work-05')) : cards.filter((c) => c.section === 'work').slice(0, 1)),
 ]
 
 export function buildTurn(
