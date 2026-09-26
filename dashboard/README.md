@@ -7,6 +7,7 @@ clip, then one click to put the person on the Engram stage (`POST /api/direct/en
 `ffmpeg` and ImageMagick on the PATH; no other dependencies.
 
 ```bash
+./setup.sh                      # checks Python 3.12+, installs requests, ffmpeg and ImageMagick (brew), creates .env
 cp .env.example .env            # NIMBLE_API_KEY, BFL_API_KEY, OPENROUTER_API_KEY (+ ENGRAM_API when Engram is remote)
 python3 dashboard.py            # http://127.0.0.1:8765  — Engram's API should be up on ENGRAM_API (default :4100)
 python3 test_pipeline.py        # no-credit self-check
