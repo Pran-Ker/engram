@@ -139,7 +139,8 @@ The stage has four controls and six keys. Keys do nothing while you are typing i
 |---|---|---|
 | Start / Pause (the orange button) | Space | Start asks for the microphone and begins listening. Pause stops listening and speaking but keeps the transcript. |
 | Text input | `/` | Reveals a **Type a question** field under the transcript and focuses it. Clicking anywhere on the transcript does the same, and the field appears on its own when the microphone fails. Esc hides it. |
-| Drawer toggle (top left) | `[` | Lists every engram with three readiness marks: voice, face, context. The last row explains how to add one. |
+| Drawer toggle (top left) | `[` | Lists every engram with three readiness marks: voice, face, context. Each row opens the engram here; the small **Talk** button on the row opens its talk page instead. |
+| Talk page | `T` | Opens `/talk/:slug`: the same engram as a typed conversation with the face in a card, spoken video replies for direct engrams, and the same drawer and context bank. `S` on the talk page comes back to the stage. |
 | Context bank toggle (top right) | `]` | Opens the cards the brain answers from, grouped by section. |
 | Inspect | `I` | Opens `/inspect/:slug`. |
 | Close panels | Esc | Closes the drawer and the bank. |
@@ -148,7 +149,7 @@ The bottom bar is 212 px tall. The voice bar is a hairline while nothing is play
 
 ![Left drawer listing Prannay Hebbar with green voice, face, and context marks, followed by an Add an engram row with a link to the docs.](docs/img/drawer.jpg)
 
-**Figure 3.** The drawer. Each row is one folder under `engrams/`; the marks come from `GET /api/engrams`.
+**Figure 3.** The drawer. Each row is one folder under `engrams/`; the marks come from `GET /api/engrams`. The row opens the engram on the surface you are on (stage or talk page); the pill on its right switches to the other one.
 
 ![Context bank panel with the Ask the web field at the top and Live from the web cards, each with its source in monospace.](docs/img/context-bank.jpg)
 

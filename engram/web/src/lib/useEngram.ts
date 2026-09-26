@@ -14,6 +14,12 @@ export type Status = 'paused' | 'listening' | 'thinking' | 'speaking'
 export type MicState = 'off' | 'on' | MicFailure
 type Voice = { provider: string; whole?: ArrayBuffer }
 type Speech = { attach: (sink: (pcm: Int16Array) => void) => void; done: Promise<Voice> }
+export type EngramOptions = {
+  /** false: sentences are shown but not sent to TTS (the talk page voices the whole answer with a FLUX clip instead). Default true. */
+  voice?: boolean
+  /** Called once per turn with the complete answer. The turn stays open (no listening) until the returned promise settles. */
+  onAnswer?: (lineId: string, text: string) => void | Promise<void>
+}
 
 const HIGHLIGHT_MS = 4000
 const HISTORY = 12
@@ -65,7 +71,9 @@ const describe = (err: unknown) => {
   return `The brain stopped: ${message.slice(0, 140)}`
 }
 
-export function useEngram(slug: string) {
+export function useEngram(slug: string, options: EngramOptions = {}) {
+  const optionsRef = useRef(options)
+  optionsRef.current = options
   const [running, setRunning] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [turnOpen, setTurnOpen] = useState(false)
@@ -202,8 +210,10 @@ export function useEngram(slug: string) {
         if (e.type === 'sentence') {
           sentences.push(e.text)
           streamed = afterSentence(streamed)
-          upsertSentence(lineId, { index: e.index, text: e.text, status: 'pending' })
+          const silent = optionsRef.current.voice === false
+          upsertSentence(lineId, { index: e.index, text: e.text, status: silent ? 'done' : 'pending' })
           setDraft(lineId, streamed)
+          if (silent) return
           const speech = fetchSpeech(slug, e.text, abort.signal)
           sequence = sequence.then(() => speakSentence(lineId, e.index, e.text, speech, gen))
         }
@@ -221,6 +231,9 @@ export function useEngram(slug: string) {
     if (answer) history.current.push({ role: 'assistant', content: answer })
     await sequence
     await player.whenIdle()
+    if (answer && gen === generation.current && optionsRef.current.onAnswer) {
+      try { await optionsRef.current.onAnswer(lineId, answer) } catch {}
+    }
     finishTurn(gen)
   }, [slug, player, recognizer])
 

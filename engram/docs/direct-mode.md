@@ -42,9 +42,9 @@ Response `201`:
 {"slug":"yaniv-markovski","name":"Yaniv Markovski","cards":7,"video":{"idle":"video/idle.mp4","talk":"video/talk.mp4","poster":"video/poster.jpg","talkFrom":"clip"},"photo":true,"mode":"direct","url":"/e/yaniv-markovski"}
 ```
 
-Open `http://localhost:4173/e/yaniv-markovski` and ask a question. The call is idempotent: posting the same person again rewrites the manifest, the direct-owned cards and the loops, and leaves `memory-*` cards and anything added by hand alone.
+Open `http://localhost:4173/talk/yaniv-markovski` (typed conversation, video replies) or `http://localhost:4173/e/yaniv-markovski` (the stage) and ask a question. When the record carried a `clip` or an `avatar_speech`, the manifest also gets `intro: { video: "video/intro.mp4", text }`: the clip with its own audio, which the talk page plays as the person's first words. The call is idempotent: posting the same person again rewrites the manifest, the direct-owned cards and the loops, and leaves `memory-*` cards and anything added by hand alone.
 
-#The reference client is [`../../dashboard/`](../../dashboard/README.md): its **Talk to me** button builds exactly this request (`export_engram.py`) from a researched person and opens the stage.
+The reference client is [`../../dashboard/`](../../dashboard/README.md): its **Talk to me** button builds exactly this request (`export_engram.py`) from a researched person and opens the talk page. Spoken video replies on that page are rendered by the dashboard (FLUX 3) and reached through Engram's `/api/engrams/:slug/reply*` proxy (`DASHBOARD_URL`, default `http://127.0.0.1:8765`).
 
 ## The record
 
@@ -64,7 +64,7 @@ Any JSON object with a name. Field names follow the [longhorizonhack](https://gi
 | `pronouns` | manifest; also drives the third-to-first-person rewrite (name-based when absent) |
 | `sources` (`source_urls`) | card `source` when nothing more specific applies |
 | `photo` — `data:` URI or URL, JPEG/PNG/WebP, ≤ 12 MB | `photos/01.<ext>`, poster, idle loop |
-| `clip` — `data:` URI or URL, mp4, ≤ 60 MB | `video/talk.mp4` (letterboxed to 1920×1080, audio dropped); without it the idle loop doubles as talk |
+| `clip` — `data:` URI or URL, mp4, ≤ 60 MB | `video/talk.mp4` (letterboxed to 1920×1080 on the page colour, audio dropped) and `video/intro.mp4` (the clip as sent, audio kept, `manifest.intro.video`); without it the idle loop doubles as talk |
 
 Cards are matched to questions by keyword overlap, so the record should carry concrete nouns: company names, products, places, years.
 
@@ -93,6 +93,8 @@ Health: `GET /api/direct/health` reports the key, the model and the last call. T
 | `server/lib/direct/person.ts` | record → manifest + cards; first-person rewrite; owned card ids |
 | `server/lib/direct/video.ts` | photo (+ clip) → `idle.mp4`, `talk.mp4`, `poster.jpg` |
 | `server/lib/direct/openrouter.ts` | streaming OpenRouter client, same shape as `lib/liquid.ts` |
-| `shared/types.ts` | `mode`, `brain.provider` (optional) |
+| `shared/types.ts` | `mode`, `brain.provider`, `intro` (optional) |
+| `server/routes/reply.ts` | proxy to the dashboard's FLUX reply renders: `GET /reply/health`, `POST /reply`, `GET /reply?job=`, `GET /reply/clip/:file` |
+| `web/src/pages/TalkPage.tsx`, `web/src/components/TalkFace.tsx` | the talk page (`/talk/:slug`) |
 | `server/routes/chat.ts` | one-line provider switch |
 | `server/lib/prompt.ts` | fallback cards: first work card when there is no `work-05` |

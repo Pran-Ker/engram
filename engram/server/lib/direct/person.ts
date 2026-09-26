@@ -74,7 +74,6 @@ export function writeDirectEngram(input: Record<string, unknown>, assets: { phot
     video: { idle: 'video/idle.mp4', talk: 'video/talk.mp4', poster: 'video/poster.jpg' },
     brain: { provider: 'openrouter', model: DIRECT_MODEL, persona: persona(p) },
   }
-  writeFileSync(join(dir, 'engram.json'), JSON.stringify(manifest, null, 2) + '\n')
 
   const source = p.sources.split(/\s+/)[0] || 'direct engram: research record'
   const companySource = p.company_url || source
@@ -104,16 +103,20 @@ export function writeDirectEngram(input: Record<string, unknown>, assets: { phot
     card(`live-post-${String(i + 1).padStart(2, '0')}-${slugify(post.snippet ?? post.url, 30)}`, 'live', `${post.platform || 'web'} post${when}`, post.snippet || post.url, post.url)
   })
 
+  // The clip keeps its audio as video/intro.mp4: the talk page plays it as the person's own first words.
+  let intro: string | undefined
+  if (assets.clip) { intro = join(dir, 'video', 'intro.mp4'); writeFileSync(intro, assets.clip) }
+  else rmSync(join(dir, 'video', 'intro.mp4'), { force: true })
+  if (intro || p.speech) manifest.intro = { ...(intro ? { video: 'video/intro.mp4' } : {}), ...(p.speech ? { text: oneLine(p.speech) } : {}) }
+  writeFileSync(join(dir, 'engram.json'), JSON.stringify(manifest, null, 2) + '\n')
+
   let video: Loops | null = null
   let photoWritten = false
   if (assets.photo) {
     const photo = join(dir, 'photos', `01${assets.photo.ext}`)
     writeFileSync(photo, assets.photo.bytes)
     photoWritten = true
-    let clipPath: string | undefined
-    if (assets.clip) { clipPath = join(dir, 'video', 'source-clip.mp4'); writeFileSync(clipPath, assets.clip) }
-    video = buildLoops(dir, photo, clipPath)
-    if (clipPath) rmSync(clipPath, { force: true })
+    video = buildLoops(dir, photo, intro)
   }
   return { slug, name: p.name, cards, video, photo: photoWritten }
 }

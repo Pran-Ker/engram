@@ -3,11 +3,12 @@ import type { EngramManifest, EngramSummary, ContextCard, ChatEvent, ChatMessage
 
 export const api = {
   engrams: () => get<EngramSummary[]>('/api/engrams'),
+  config: () => get<{ dashboard: string }>('/api/config'),
   engram: (slug: string) => get<EngramManifest & { cards: number }>(`/api/engrams/${slug}`),
   cards: (slug: string) => get<ContextCard[]>(`/api/engrams/${slug}/context`),
   addWebContext: (slug: string, query: string) =>
     post<ContextCard[]>(`/api/engrams/${slug}/context/web`, { query }),
-  videoUrl: (slug: string, clip: 'idle' | 'talk' | 'poster') => `/api/engrams/${slug}/video/${clip}`,
+  videoUrl: (slug: string, clip: 'idle' | 'talk' | 'poster' | 'intro') => `/api/engrams/${slug}/video/${clip}`,
   tts: async (slug: string, text: string, turnId?: string, signal?: AbortSignal): Promise<{ audio: ArrayBuffer; provider: string }> => {
     const r = await fetch(`/api/engrams/${slug}/tts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, turnId }), signal })
     if (!r.ok) throw new Error(`tts ${r.status}: ${await r.text()}`)

@@ -11,6 +11,9 @@ import { events } from './routes/events.ts'
 import { inspect } from './routes/inspect.ts'
 import { health } from './routes/health.ts'
 import { direct } from './routes/direct.ts'
+import { reply, DASHBOARD_URL } from './routes/reply.ts'
+import { listEngrams } from './lib/engram-store.ts'
+import { bank } from './lib/router.ts'
 
 export const PORT = Number(process.env.PORT ?? 4100)
 
@@ -21,9 +24,11 @@ app.route('/api/engrams', engrams)   // GET /, GET /:slug, GET /:slug/video/:cli
 app.route('/api/engrams', chat)      // POST /:slug/chat  (SSE)
 app.route('/api/engrams', tts)       // POST /:slug/tts   (audio/wav)
 app.route('/api/engrams', context)   // GET /:slug/context, POST /:slug/context/web, POST /:slug/context
+app.route('/api/engrams', reply)     // GET /:slug/reply/health, POST /:slug/reply, GET /:slug/reply?job=, GET /:slug/reply/clip/:file  (FLUX video replies via the dashboard)
 app.route('/api/events', events)     // POST /, GET /
 app.route('/api/inspect', inspect)   // GET /:slug/runs, GET /:slug/turns, POST /:slug/flags ...
 app.route('/api/health', health)     // GET /
+app.get('/api/config', (c) => c.json({ dashboard: DASHBOARD_URL }))  // where the talking-avatar dashboard lives, for the header link
 app.route('/api/direct', direct)     // POST /engrams (record -> engram folder), GET /health  (direct avatar mode)
 
 app.notFound((c) => (c.req.path.startsWith('/api/') ? c.json({ error: `no route ${c.req.path}` }, 404) : c.text('Not Found', 404)))
@@ -40,6 +45,8 @@ if (existsSync('web/dist')) {
 
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(`engram server on http://localhost:${PORT}`)
+  // Embed every engram's Q&A bank now so the first visitor does not wait for it.
+  for (const e of listEngrams()) bank(e.slug).catch((err) => console.warn(`[router] warm ${e.slug} failed: ${(err as Error).message}`))
 })
 
 // Docs as plain markdown so the stage can link to them (frontend workstream).

@@ -8,6 +8,7 @@ import { VoiceBar } from '../components/VoiceBar.tsx'
 import { Transcript } from '../components/Transcript.tsx'
 import { EngramDrawer } from '../components/EngramDrawer.tsx'
 import { ContextBank } from '../components/ContextBank.tsx'
+import { DashboardLink } from '../components/DashboardLink.tsx'
 import './EngramPage.css'
 
 const DEFAULT_SLUG = 'prannay'
@@ -48,6 +49,7 @@ export function EngramPage() {
       else if (e.key === '[') setDrawer((v) => !v)
       else if (e.key === ']') setBank((v) => !v)
       else if (e.key === 'i' || e.key === 'I') navigate(`/inspect/${slug}`)
+      else if (e.key === 't' || e.key === 'T') navigate(`/talk/${slug}`)
       else if (e.key === 'Escape') { setDrawer(false); setBank(false) }
     }
     window.addEventListener('keydown', onKey)
@@ -67,9 +69,12 @@ export function EngramPage() {
           <Chevron />
         </button>
         <h1 className="stage-name">{name}</h1>
-        <button className="icon-btn" onClick={() => setBank(true)} aria-label="Open context bank" title="Context bank  ]">
-          <Lines />
-        </button>
+        <div className="stage-actions">
+          <DashboardLink />
+          <button className="icon-btn" onClick={() => setBank(true)} aria-label="Open context bank" title="Context bank  ]">
+            <Lines />
+          </button>
+        </div>
       </header>
 
       <section className="stage-center" onClick={() => (drawer || bank) && closePanels()}>
@@ -109,7 +114,7 @@ export function EngramPage() {
         />
       </footer>
 
-      <EngramDrawer open={drawer} current={slug} onClose={() => setDrawer(false)} />
+      <EngramDrawer open={drawer} current={slug} surface="stage" onClose={() => setDrawer(false)} />
       <ContextBank
         open={bank}
         slug={slug}

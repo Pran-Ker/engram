@@ -21,6 +21,10 @@ export type EngramManifest = {
     provider?: 'ollama' | 'openrouter'   // default ollama. Direct mode uses openrouter (docs/direct-mode.md)
   }
   mode?: 'hyper' | 'direct' // default hyper: the hand-built path with a fine-tuned voice. direct: written by POST /api/direct/engrams
+  intro?: {                 // direct mode: the person's own "bring to life" clip with its audio, and the line it speaks. The talk page plays it first.
+    video?: string          // "video/intro.mp4", served at GET /api/engrams/:slug/video/intro
+    text?: string
+  }
 }
 
 export type EngramSummary = Pick<EngramManifest, 'slug' | 'name' | 'tagline'> & {

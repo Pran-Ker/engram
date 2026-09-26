@@ -18,13 +18,13 @@ engrams.get('/:slug', (c) => {
   }
 })
 
-// GET /api/engrams/:slug/video/:clip   clip = idle | talk | poster
+// GET /api/engrams/:slug/video/:clip   clip = idle | talk | poster | intro (direct mode only: the source clip with its audio)
 engrams.get('/:slug/video/:clip', (c) => {
   const slug = c.req.param('slug')
-  const clip = c.req.param('clip') as 'idle' | 'talk' | 'poster'
+  const clip = c.req.param('clip') as 'idle' | 'talk' | 'poster' | 'intro'
   let m
   try { m = loadManifest(slug) } catch (e) { return c.json({ error: (e as Error).message }, 404) }
-  const rel = m.video[clip]
+  const rel = clip === 'intro' ? m.intro?.video : m.video[clip]
   if (!rel) return c.json({ error: `unknown clip ${clip}` }, 404)
   const p = join(engramDir(slug), rel)
   if (!existsSync(p)) return c.json({ error: `clip not generated yet: ${rel}` }, 404)
