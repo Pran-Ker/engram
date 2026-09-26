@@ -7,3 +7,5 @@ videos/replies/
 __pycache__/
 .snapshots/
 .crawls/
+_removed/
+data/*.bak-*
