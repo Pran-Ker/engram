@@ -25,6 +25,8 @@ const TITLE_WORDS = 5
 const THROWAWAY_SESSIONS = /^(test|curl|bench)/i
 const MEMORY_ON = process.env.ENGRAM_MEMORY !== 'off'   // ENGRAM_MEMORY=off: never write memory cards (demo safety)
 const WEB_TIMEOUT_MS = 6000
+const BRAIN_PROVIDER = process.env.BRAIN_PROVIDER as 'ollama' | 'openrouter' | undefined   // hosted override of manifest.brain.provider
+const BRAIN_MODEL = process.env.BRAIN_MODEL   // hosted override of manifest.brain.model
 const SENTENCE_END = /(?<!\b[A-Z])[.!?]["')\]]*(?=\s|$)/g
 const SENTENCE_END_FIRST = /(?<!\b[A-Z])[.!?]["')\]]*(?=\s|$)/
 const CLAUSE_END = /[,;](?=\s)/g
@@ -43,7 +45,7 @@ chat.post('/:slug/chat', async (c) => {
 
   const started = Date.now()
   const turnId = randomUUID()
-  const model = manifest.brain.model || DEFAULT_MODEL
+  const model = BRAIN_MODEL || manifest.brain.model || DEFAULT_MODEL
   logEvent({ engram: slug, session: sessionId, turn: turnId, type: 'user_utterance', chars: question.length, text: question })
   const [qaBank, { vector, best }] = await Promise.all([bank(slug), matchQuestion(slug, question)])
   const cards = qaBank.cards
@@ -70,7 +72,7 @@ chat.post('/:slug/chat', async (c) => {
     }
 
     const wantsWeb = needsWeb(question, cards, manifest.name)
-    const brain = manifest.brain.provider === 'openrouter' ? streamOpenRouter : streamChat
+    const brain = (BRAIN_PROVIDER ?? manifest.brain.provider) === 'openrouter' ? streamOpenRouter : streamChat
     const exclude = [memoryId(sessionId)]
     let firstTokenAt = 0
     let live: WebResult | undefined

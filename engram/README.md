@@ -114,6 +114,18 @@ Optional: rebuild the face with `npm run video:build -- prannay`. See [Adding an
 
 To typecheck everything, run `npm run check`.
 
+### Deploy on Railway
+
+The hosted copy for judges runs as two Railway services in project `engram`: `engram` (this folder, `Dockerfile`, port 4100, public domain) and `ollama` (`deploy/ollama/Dockerfile`, the Liquid brain and the `all-minilm` embedding model baked into the image, private network only). The app reaches the brain at `OLLAMA_URL=http://ollama.railway.internal:11434` and the voice at `ENGRAM_TTS_URL` (the Modal URL from `../voice/.tts-url`). Keys are Railway variables, never in the image.
+
+```bash
+railway login
+railway up deploy/ollama --path-as-root --service ollama --detach
+railway up --service engram --detach
+```
+
+`railway up` honors `.gitignore` plus `.railwayignore`, so `engrams/prannay/video/*` is un-ignored to ship the clips. The brain runs on CPU there; set `BRAIN_PROVIDER=openrouter` and `BRAIN_MODEL=liquid/lfm-2.5-2.6b:free` on the `engram` service to answer through OpenRouter instead.
+
 ### Environment variables
 
 All optional. Defaults are in parentheses.
@@ -123,9 +135,11 @@ All optional. Defaults are in parentheses.
 | `PORT` | API port (`4100`) |
 | `ENGRAMS_DIR` | Folder of engrams (`engrams`) |
 | `OLLAMA_URL`, `LIQUID_MODEL` | Ollama endpoint and model tag override |
+| `OLLAMA_THREADS` | Cap llama.cpp threads for chat and embeddings; set to the host's real vCPU quota when the container sees more cores than it may use (Railway) |
 | `ENGRAM_TTS_URL` | Voice service URL; overrides `../voice/.tts-url` |
 | `ENGRAM_TTS_LOCAL` | Set to `0` to disable the macOS `say` fallback (dev only; never on stage) |
 | `ENGRAM_EVENTS_URL` | Where the TTS route posts its own events (`http://localhost:4100/api/events`) |
+| `BRAIN_PROVIDER`, `BRAIN_MODEL` | Override `brain.provider` / `brain.model` from the manifest (hosted use) |
 | `ENGRAM_MEMORY` | Set to `off` to stop the brain from saving memory cards after conversations (default on; a turn is saved only when it used a non-memory card and names something from the notes) |
 | `TTS_CACHE_DIR` | Cache of synthesized wavs (`review/tts-cache`) |
 | `RAWTREE_DATABASE` | RawTree database (`default`) |

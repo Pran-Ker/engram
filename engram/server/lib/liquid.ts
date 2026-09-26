@@ -3,7 +3,9 @@ import type { PromptMessage } from './prompt.ts'
 export const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434'
 export const DEFAULT_MODEL = process.env.LIQUID_MODEL ?? 'hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M'
 const KEEP_ALIVE = '2h'
-const OPTIONS = { temperature: 0.15, top_p: 0.9, repeat_penalty: 1.0, seed: 7, num_predict: 80, num_ctx: 2048 }
+// Cap llama.cpp threads where the container sees more cores than its CPU quota allows (Railway shows 48, grants far fewer).
+export const OLLAMA_THREADS = process.env.OLLAMA_THREADS ? Number(process.env.OLLAMA_THREADS) : undefined
+const OPTIONS = { temperature: 0.15, top_p: 0.9, repeat_penalty: 1.0, seed: 7, num_predict: 80, num_ctx: 2048, ...(OLLAMA_THREADS ? { num_thread: OLLAMA_THREADS } : {}) }
 
 export type OllamaStats = { promptTokens?: number; promptEvalMs?: number; evalTokens?: number; evalMs?: number }
 

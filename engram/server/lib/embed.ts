@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { OLLAMA_URL } from './liquid.ts'
+import { OLLAMA_THREADS, OLLAMA_URL } from './liquid.ts'
 
 const MODELS = [process.env.EMBED_MODEL ?? 'all-minilm', 'nomic-embed-text']
 const CACHE_FILE = resolve(process.env.EMBED_CACHE ?? 'review/qa-embeddings.json')
-const BATCH = 64
+const BATCH = 16
 const SAVE_DEBOUNCE_MS = 500
+const EMBED_TIMEOUT_MS = Number(process.env.EMBED_TIMEOUT_MS ?? 120_000)   // CPU-only hosts embed slowly
 
 type CacheFile = { model: string; vectors: Record<string, number[]> }
 
@@ -51,8 +52,8 @@ async function requestEmbeddings(input: string[]): Promise<number[][]> {
   for (const candidate of MODELS.slice(MODELS.indexOf(model))) {
     const r = await fetch(`${OLLAMA_URL}/api/embed`, {
       method: 'POST',
-      body: JSON.stringify({ model: candidate, input, keep_alive: '2h' }),
-      signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ model: candidate, input, keep_alive: '2h', options: OLLAMA_THREADS ? { num_thread: OLLAMA_THREADS } : undefined }),
+      signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
     })
     if (r.ok) {
       if (candidate !== model) switchModel(candidate)
