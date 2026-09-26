@@ -34,7 +34,8 @@ export async function geminiPcm(text: string): Promise<Buffer> {
   let last: Error | null = null
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
     try {
-      return await geminiPcmOnce(text)
+      // last attempt goes without the style instruction: the OTHER finish reason is usually the prompt, not the text
+      return await geminiPcmOnce(text, attempt < RETRIES)
     } catch (e) {
       last = e as Error
       if (!/no audio|HTTP 5\d\d|gemini tts 5\d\d|429/.test(last.message)) throw last
@@ -44,11 +45,11 @@ export async function geminiPcm(text: string): Promise<Buffer> {
   throw last!
 }
 
-async function geminiPcmOnce(text: string): Promise<Buffer> {
+async function geminiPcmOnce(text: string, styled = true): Promise<Buffer> {
   const key = apiKey()
   if (!key) throw new Error('GEMINI_API_KEY missing')
   const body = {
-    contents: [{ parts: [{ text: `${STYLE} ${text}` }] }],
+    contents: [{ parts: [{ text: styled ? `${STYLE} ${text}` : text }] }],
     generationConfig: {
       responseModalities: ['AUDIO'],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
