@@ -1,18 +1,24 @@
-/* Design tokens. One neutral base, one accent. Dark stage theme only (this is shown on a projector). */
+/* Design tokens. One warm neutral base, one accent. Light theme, shared with the dashboard (same cream, same ink). */
 :root {
-  --bg: #0b0b0c;          /* page */
-  --bg-1: #121214;        /* panels (drawer, context bank, bottom bar) */
-  --bg-2: #1a1a1d;        /* cards, inputs */
-  --line: #26262a;        /* hairlines */
-  --line-strong: #34343a;
-  --fg: #ececee;          /* primary text */
-  --fg-1: #a4a4ab;        /* secondary text */
-  --fg-2: #6b6b72;        /* tertiary / labels */
-  --accent: #ff6a3d;      /* the only accent: interactive + voice bar */
-  --accent-soft: rgba(255, 106, 61, 0.35);
-  --ok: #4fc38a;
-  --warn: #e8b23f;
-  --err: #e5544b;
+  --bg: #f3efe7;          /* page */
+  --bg-1: #f9f7f2;        /* panels (drawer, context bank, bottom bar) */
+  --bg-2: #ffffff;        /* cards, inputs, hover fills */
+  --bg-hover: #efeae0;    /* hover on a white card */
+  --line: #e2dccf;        /* hairlines */
+  --line-strong: #c9c1b0;
+  --fg: #1c1b19;          /* primary text */
+  --fg-1: #5f5b53;        /* secondary text */
+  --fg-2: #8a857b;        /* tertiary / labels */
+  --accent: #d94f22;      /* the only accent: interactive + voice bar */
+  --accent-hover: #c4431a;
+  --accent-fg: #ffffff;   /* text on an accent fill */
+  --accent-soft: rgba(217, 79, 34, 0.32);
+  --accent-glow: rgba(217, 79, 34, 0.14);
+  --accent-tint: rgba(217, 79, 34, 0.10);
+  --ok: #1e7f4f;
+  --warn: #9a6700;
+  --err: #b3261e;
+  --shadow: 0 12px 32px rgba(28, 27, 25, 0.14), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
 
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -37,9 +43,11 @@ body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  color-scheme: light;
 }
 button { font: inherit; color: inherit; }
 a { color: inherit; }
+::selection { background: var(--accent-soft); }
 
 /* Self-hosted fonts (latin subsets, variable weight) so the stage renders the same offline. */
 @font-face {

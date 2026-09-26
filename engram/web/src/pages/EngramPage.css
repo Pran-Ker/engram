@@ -10,11 +10,13 @@
 
 .stage-top {
   display: grid;
-  grid-template-columns: 52px 1fr 52px;
+  grid-template-columns: 52px 1fr auto;
   align-items: center;
+  gap: 8px;
   padding: 0 8px;
   border-bottom: 1px solid var(--line);
 }
+.stage-actions { display: flex; align-items: center; gap: 4px; }
 .stage-name {
   margin: 0;
   text-align: center;
@@ -39,7 +41,7 @@
   transition: background var(--dur-1) ease, color var(--dur-1) ease, transform 160ms var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .icon-btn:hover { background: var(--bg-2); color: var(--fg); }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--fg); }
 }
 .icon-btn:active { transform: scale(0.94); }
 .icon-btn:focus-visible { outline: 1px solid var(--line-strong); outline-offset: 1px; }
@@ -86,7 +88,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: #1a0c06;
+  color: var(--accent-fg);
   cursor: pointer;
   box-shadow: 0 0 0 0 var(--accent-soft);
   transition: transform 160ms var(--ease-out), box-shadow var(--dur-3) var(--ease-out), filter var(--dur-1) ease;
@@ -94,13 +96,13 @@
 .start-btn svg { transform: translateX(1px); }
 .start-btn[data-running='true'] svg { transform: none; }
 @media (hover: hover) and (pointer: fine) {
-  .start-btn:hover { filter: brightness(1.06); }
+  .start-btn:hover { background: var(--accent-hover); }
 }
 .start-btn:active { transform: scale(0.95); }
 .start-btn:focus-visible { outline: 1px solid var(--fg-1); outline-offset: 3px; }
-.start-btn[data-running='true'] { box-shadow: 0 0 0 6px rgba(255, 106, 61, 0.14); }
+.start-btn[data-running='true'] { box-shadow: 0 0 0 6px var(--accent-glow); }
 .start-btn:disabled {
-  background: var(--bg-2);
+  background: var(--line);
   color: var(--fg-2);
   cursor: default;
   box-shadow: none;

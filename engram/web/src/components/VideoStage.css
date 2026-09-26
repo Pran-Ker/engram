@@ -8,20 +8,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px 24px;
 }
 
+/* The video sits in a framed viewport on the light page: studio portraits keep their own dark backdrop,
+   direct-mode loops are letterboxed onto the page colour and melt into the frame. */
 .stage-frame {
   position: relative;
-  width: min(100cqw, 100cqh * 16 / 9);
+  width: min(100cqw - 48px, (100cqh - 40px) * 16 / 9);
   aspect-ratio: 16 / 9;
-  mask-image:
-    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
-    linear-gradient(to bottom, transparent, #000 12%, #000);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(to right, transparent, #000 9%, #000 91%, transparent),
-    linear-gradient(to bottom, transparent, #000 12%, #000);
-  -webkit-mask-composite: source-in;
+  overflow: hidden;
+  border-radius: var(--r-3);
+  background: var(--bg-1);
+  box-shadow: 0 0 0 1px var(--line), 0 18px 48px rgba(28, 27, 25, 0.12);
 }
 
 .stage-video,
@@ -43,8 +42,8 @@
   opacity: 0;
   transition: opacity 600ms var(--ease-out);
   background:
-    radial-gradient(ellipse 34% 46% at 50% 56%, rgba(255, 106, 61, 0.10), transparent 70%),
-    radial-gradient(ellipse 60% 70% at 50% 60%, #15151a, transparent 75%);
+    radial-gradient(ellipse 34% 46% at 50% 56%, var(--accent-tint), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 50% 60%, var(--bg-1), transparent 75%);
 }
 .stage-presence[data-visible='true'] { opacity: 1; }
 .stage-presence::after {
@@ -57,7 +56,7 @@
   margin: -120px 0 0 -120px;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
-  box-shadow: 0 0 0 40px rgba(38, 38, 42, 0.25), 0 0 120px 20px rgba(255, 106, 61, 0.05) inset;
+  box-shadow: 0 0 0 40px rgba(226, 220, 207, 0.35), 0 0 120px 20px var(--accent-tint) inset;
   animation: breathe 6s ease-in-out infinite;
 }
 .stage-presence[data-speaking='true']::after {

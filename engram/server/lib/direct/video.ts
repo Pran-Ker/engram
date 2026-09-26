@@ -5,7 +5,7 @@ import { copyFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SIZE = '1920x1080'
-const BG = '0x0b0b0c'
+const BG = '0xf3efe7'   // web/src/tokens.css --bg: the bars melt into the page
 const FPS = 30
 const IDLE_SECONDS = 10
 const ENC = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-crf', '18', '-preset', 'fast', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-movflags', '+faststart', '-an']
