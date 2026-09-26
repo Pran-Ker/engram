@@ -6,12 +6,17 @@ import type { EventRow } from '../../shared/types.ts'
 import { loadManifest } from '../lib/engram-store.ts'
 import { modalHealth, modalTts, modalTtsStream, ttsUrl } from '../lib/tts-modal.ts'
 import { LOCAL_PROVIDER, localAvailable, localSay } from '../lib/tts-local.ts'
+import { GEMINI_PROVIDER, geminiAvailable, geminiTts, geminiTtsStream } from '../lib/tts-gemini.ts'
 
 export const tts = new Hono()
 
 const CACHE_DIR = resolve(process.env.TTS_CACHE_DIR ?? 'review/tts-cache')
-const EVENTS_URL = process.env.ENGRAM_EVENTS_URL ?? 'http://localhost:4100/api/events'
+const EVENTS_URL = process.env.ENGRAM_EVENTS_URL ?? `http://localhost:${process.env.PORT ?? 4100}/api/events`
 const ALLOW_LOCAL = process.env.ENGRAM_TTS_LOCAL !== '0'
+// auto: the fine-tuned run on Modal when it exists, otherwise Gemini (fast, hosted), otherwise Modal base, otherwise local say.
+// gemini | modal | local force one family first. Fallbacks after it stay the same.
+const PROVIDER = (process.env.ENGRAM_TTS_PROVIDER ?? 'auto') as 'auto' | 'gemini' | 'modal' | 'local'
+const FINE_TUNE_TTL_MS = 60_000
 const SPLIT_CHARS = 70
 const SPLIT_WINDOW = 0.3
 const GAP_MS = 140
@@ -34,16 +39,26 @@ tts.post('/:slug/tts', async (c) => {
   const manifest = manifestOr404(slug)
   if (!manifest) return c.json({ error: `no engram ${slug}` }, 404)
   const { run, systemPrompt } = manifest.voice
-  const key = sha1(`${run}\n${text}`)
+  const gemini = await geminiFirst(run)
+  const key = cacheKey(gemini, run, text)
 
   const cached = readCache(key)
   if (cached) return wavResponse(cached.wav, cached.provider, { 'x-voice-cache': 'hit' })
 
   const t0 = Date.now()
-  const result = await synthesize(text, run, systemPrompt, (provider, reason) =>
-    logEvent({ engram: slug, session: 'server', turn, type: 'tts_fallback', provider, chars: text.length, text: reason }),
-  )
-  if (!result) return c.json({ error: 'no TTS provider available: Modal unreachable and local say disabled' }, 503)
+  const onFallback = (provider: string, reason: string) =>
+    logEvent({ engram: slug, session: 'server', turn, type: 'tts_fallback', provider, chars: text.length, text: reason })
+  let result: Synth | null = null
+  if (gemini) {
+    try {
+      result = await geminiTts(text)
+    } catch (e) {
+      console.warn(`[tts] gemini failed: ${(e as Error).message}`)
+      onFallback('modal', `gemini failed: ${(e as Error).message}`)
+    }
+  }
+  if (!result) result = await synthesize(text, run, systemPrompt, onFallback)
+  if (!result) return c.json({ error: 'no TTS provider available: Gemini/Modal unreachable and local say disabled' }, 503)
 
   writeCache(key, result)
   logEvent({ engram: slug, session: 'server', turn, type: 'tts_done', ms: Date.now() - t0, provider: result.provider, chars: text.length, meta: { modalMs: result.ms, parts: result.parts } })
@@ -59,12 +74,22 @@ tts.post('/:slug/tts/stream', async (c) => {
   const manifest = manifestOr404(slug)
   if (!manifest) return c.json({ error: `no engram ${slug}` }, 404)
   const { run, systemPrompt } = manifest.voice
-  const key = sha1(`${run}\n${text}`)
+  const gemini = await geminiFirst(run)
+  const key = cacheKey(gemini, run, text)
 
   const cached = readCache(key)
   if (cached) return pcmResponse(new Blob([new Uint8Array(pcmOf(cached.wav))]).stream(), cached.provider, { 'x-voice-cache': 'hit' })
 
   const t0 = Date.now()
+  if (gemini) {
+    // Clauses are generated in parallel and emitted in order; each chunk is a whole clause, so no hold is needed.
+    const upstream = geminiTtsStream(text)
+    const tee = teeToCache(key, upstream.provider, 0, (ms, firstMs) =>
+      logEvent({ engram: slug, session: 'server', turn, type: 'tts_done', ms, provider: upstream.provider, chars: text.length, meta: { firstMs, stream: true, parts: upstream.parts } }),
+      t0)
+    return pcmResponse(upstream.body.pipeThrough(tee), upstream.provider, { 'x-voice-cache': 'miss', 'x-voice-parts': String(upstream.parts) })
+  }
+
   let upstream
   try {
     upstream = await modalTtsStream(text, run, systemPrompt)
@@ -74,16 +99,67 @@ tts.post('/:slug/tts/stream', async (c) => {
   if (run !== 'base' && upstream.provider === 'modal:base')
     logEvent({ engram: slug, session: 'server', turn, type: 'tts_fallback', provider: upstream.provider, chars: text.length, text: `run ${run} not on Modal yet` })
 
-  const parts: Buffer[] = []
-  let firstMs = 0
   // Modal generates at ~0.87x real time, so long sentences need a head start or the browser re-buffers mid-sentence.
   // Hold the first ~15% of the estimated duration (minus what the client already holds), at least 0.4 s so short sentences do not re-buffer, capped, then pass through.
   const estSeconds = text.length * 0.08
   const holdBytes = Math.round(Math.min(1.6, Math.max(0.4, 0.15 * estSeconds - 0.6)) * 48_000)
+  const tee = teeToCache(key, upstream.provider, holdBytes, (ms, firstMs) =>
+    logEvent({ engram: slug, session: 'server', turn, type: 'tts_done', ms, provider: upstream.provider, chars: text.length, meta: { firstMs, stream: true } }),
+    t0)
+  return pcmResponse(upstream.body.pipeThrough(tee), upstream.provider, { 'x-voice-cache': 'miss' })
+})
+
+tts.get('/:slug/tts/health', async (c) => {
+  const slug = c.req.param('slug')
+  const manifest = manifestOr404(slug)
+  if (!manifest) return c.json({ error: `no engram ${slug}` }, 404)
+  const { run } = manifest.voice
+  const gemini = await geminiFirst(run)
+  const common = { run, first: gemini ? GEMINI_PROVIDER : 'modal', mode: PROVIDER, gemini: geminiAvailable(), local: localAvailable() && ALLOW_LOCAL }
+  try {
+    const modal = await modalHealth(run)
+    return c.json({ ok: true, ...common, ...modal, provider: gemini ? GEMINI_PROVIDER : String(modal.provider ?? 'modal') })
+  } catch (e) {
+    return c.json({ ok: gemini, ...common, provider: gemini ? GEMINI_PROVIDER : undefined, url: ttsUrl(), detail: `modal: ${(e as Error).message}` }, gemini ? 200 : 503)
+  }
+})
+
+// --- provider choice -------------------------------------------------------------------------------------------
+
+let fineTune: { run: string; ready: boolean; at: number } | null = null
+
+/** True when Modal reports the fine-tuned checkpoint for this run. Cached for a minute; false when Modal is unreachable. */
+async function fineTuneReady(run: string): Promise<boolean> {
+  if (run === 'base') return false
+  if (fineTune && fineTune.run === run && Date.now() - fineTune.at < FINE_TUNE_TTL_MS) return fineTune.ready
+  let ready = false
+  try {
+    const h = await modalHealth(run)
+    ready = !!h.run_exists
+  } catch {}
+  fineTune = { run, ready, at: Date.now() }
+  return ready
+}
+
+async function geminiFirst(run: string): Promise<boolean> {
+  if (!geminiAvailable()) return false
+  if (PROVIDER === 'gemini') return true
+  if (PROVIDER === 'modal' || PROVIDER === 'local') return false
+  return !(await fineTuneReady(run))
+}
+
+function cacheKey(gemini: boolean, run: string, text: string) {
+  return gemini ? sha1(`${GEMINI_PROVIDER}\n${text}`) : sha1(`${run}\n${text}`)
+}
+
+/** Passes PCM through, optionally holding the first `holdBytes`, and writes the whole take to the disk cache on flush. */
+function teeToCache(key: string, provider: string, holdBytes: number, onDone: (ms: number, firstMs: number) => void, t0: number) {
+  const parts: Buffer[] = []
+  let firstMs = 0
   let held: Buffer[] = []
   let heldBytes = 0
   let released = holdBytes === 0
-  const tee = new TransformStream<Uint8Array, Uint8Array>({
+  return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       if (!firstMs) firstMs = Date.now() - t0
       parts.push(Buffer.from(chunk))
@@ -99,24 +175,11 @@ tts.post('/:slug/tts/stream', async (c) => {
     flush(controller) {
       if (held.length) controller.enqueue(new Uint8Array(Buffer.concat(held)))
       const ms = Date.now() - t0
-      writeCache(key, { wav: wavOf(Buffer.concat(parts)), provider: upstream.provider, ms, parts: 1 })
-      logEvent({ engram: slug, session: 'server', turn, type: 'tts_done', ms, provider: upstream.provider, chars: text.length, meta: { firstMs, stream: true } })
+      if (parts.length) writeCache(key, { wav: wavOf(Buffer.concat(parts)), provider, ms, parts: 1 })
+      onDone(ms, firstMs)
     },
   })
-  return pcmResponse(upstream.body.pipeThrough(tee), upstream.provider, { 'x-voice-cache': 'miss' })
-})
-
-tts.get('/:slug/tts/health', async (c) => {
-  const slug = c.req.param('slug')
-  const manifest = manifestOr404(slug)
-  if (!manifest) return c.json({ error: `no engram ${slug}` }, 404)
-  const { run } = manifest.voice
-  try {
-    return c.json({ ok: true, run, ...(await modalHealth(run)), local: localAvailable() && ALLOW_LOCAL })
-  } catch (e) {
-    return c.json({ ok: false, run, url: ttsUrl(), detail: (e as Error).message, local: localAvailable() && ALLOW_LOCAL }, 503)
-  }
-})
+}
 
 async function synthesize(
   text: string,

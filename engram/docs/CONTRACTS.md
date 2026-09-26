@@ -12,7 +12,11 @@ engram/
     routes/chat.ts      POST /:slug/chat  SSE, Liquid via Ollama        (brain)
     routes/context.ts   context bank read + Nimble "add from the web"   (brain)
     routes/events.ts    RawTree event log insert/query                  (brain)
+<<<<<<< /tmp/c_merged.md
+    routes/tts.ts       POST /:slug/tts  audio/wav, Modal LFM2.5-Audio or Gemini TTS   (voice)
+=======
     routes/tts.ts       POST /:slug/tts  audio/wav, Modal LFM2.5-Audio   (voice)
+>>>>>>> /tmp/c_theirs.md
     routes/inspect.ts   finetune runs, checkpoints, flags               (inspect)
     routes/health.ts    GET /api/health                                 (brain)
     lib/                engram-store.ts (done), liquid.ts, nimble.ts, rawtree.ts, tts-*.ts
@@ -62,8 +66,13 @@ All under `/api`. JSON unless stated. Errors: `{ error: string }` with a real st
 | POST `/engrams/:slug/context/web` | `{ query }` | Nimble search -> writes new `section: live` cards into `engrams/<slug>/context/live-*.md` -> returns the new `ContextCard[]` |
 | POST `/engrams/:slug/context` | `{ section, title, body, source }` | writes a card, returns it (used for "memory" cards the brain saves after a conversation) |
 | POST `/engrams/:slug/chat` | `{ messages: ChatMessage[], sessionId }` | **SSE** (`text/event-stream`), one `data: <ChatEvent JSON>\n\n` per event. Order: optional `context`, `token`*, `sentence` (emitted as soon as a sentence boundary is seen, so the client can start TTS while the model is still writing), ..., `done`. First token target < 600 ms locally. |
+<<<<<<< /tmp/c_merged.md
+| POST `/engrams/:slug/tts` | `{ text, turnId? }` | `audio/wav` 24 kHz mono PCM16. Header `x-voice-provider`: `modal:<run>` \| `gemini:<voice>` \| `modal:base` \| `local:say`. Provider chain (`ENGRAM_TTS_PROVIDER=auto`, default): fine-tuned run on Modal when it exists -> Gemini 2.5 Flash TTS (`GEMINI_API_KEY`, voice `GEMINI_TTS_VOICE`, default Puck) -> base LFM2.5-Audio on Modal -> local `say` (dev only, never on stage). `ENGRAM_TTS_PROVIDER=gemini|modal|local` forces the first family. Every fallback logs a `tts_fallback` event. |
+| POST `/engrams/:slug/tts/stream` | `{ text, turnId? }` | chunked raw PCM16 LE mono 24 kHz (`x-voice-rate: 24000`, `x-voice-format: s16le mono`, `x-voice-provider`, `x-voice-cache`). First chunk ~1.3 s on Modal, ~1.5–2.5 s on Gemini (clauses of ≤18 words are generated in parallel and streamed in order, so the rest of a long reply lands while the first clause plays). 503 JSON when unavailable: fall back to `/tts`. Tees into the same disk cache. The stage uses this route first. The stream route holds the first `clamp(0.15 × estimated duration − 0.6 s, 0.4 s, 1.6 s)` of audio before releasing (nothing for short sentences), and the client holds 0.7 s more, so a sentence plays gapless even when Modal generates at ~0.8x real time. |
+=======
 | POST `/engrams/:slug/tts` | `{ text, turnId? }` | `audio/wav` 24 kHz mono PCM16. Header `x-voice-provider`: `modal:<run>` \| `modal:base` \| `local:say`. Provider chain: fine-tuned run on Modal -> base LFM2.5-Audio on Modal -> local `say` (dev only, never on stage). Every fallback logs a `tts_fallback` event. |
 | POST `/engrams/:slug/tts/stream` | `{ text, turnId? }` | chunked raw PCM16 LE mono 24 kHz (`x-voice-rate: 24000`, `x-voice-format: s16le mono`, `x-voice-provider`, `x-voice-cache`). First chunk ~1.3 s. 503 JSON when unavailable: fall back to `/tts`. Tees into the same disk cache. The stage uses this route first. The stream route holds the first `clamp(0.15 × estimated duration − 0.6 s, 0.4 s, 1.6 s)` of audio before releasing (nothing for short sentences), and the client holds 0.7 s more, so a sentence plays gapless even when Modal generates at ~0.8x real time. |
+>>>>>>> /tmp/c_theirs.md
 | POST `/events` | `Omit<EventRow,'ts'>` | `{ ok: true }` (RawTree insert, table `lh_engram_events`; buffer + flush, never block the caller) |
 | GET `/events?engram=&since=&limit=` | | `EventRow[]` from RawTree |
 | GET `/inspect/:slug/runs` | | fine-tune runs + checkpoints + curves (see inspect) |
