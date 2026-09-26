@@ -120,42 +120,76 @@ def download(url, out):
     return False
 
 
-def animate(row, resolution, draft, retried=False):
-    src = headshot(row["person_id"])
-    if not src: print(f"[{row['person_id']}] no verified photo — upload one first"); return
-    img = flux_ready(src); w, h = dims(img)
-    row["avatar_speech"] = speech_for(row)
-    if not row["avatar_speech"]: print(f"[{row['person_id']}] nothing to say yet: research found no headline/company and no script"); return
-    words = len(row["avatar_speech"].split())
-    body = {"mode": "i2v", "prompt": prompt_for(row), "duration": DURATION, "aspect_ratio": aspect_for(w, h), "resolution": resolution,
-            "generate_audio": True, "safety_tolerance": 2, "draft": draft,
+def duration_for(line):
+    """Seconds FLUX gets for a line: ~2 words/s plus a beat, within BFL's 5–20 s."""
+    return max(5, min(20, round(len(line.split()) / 2 + 2)))
+
+
+def render_clip(img, line, out, tag, duration=DURATION, resolution="hd", draft=False, retried=False):
+    """One FLUX 3 i2v call: the person in `img` speaks `line`. Writes `out`; returns the settled cost (credits) or None."""
+    w, h = dims(img); words = len(line.split())
+    body = {"mode": "i2v", "prompt": prompt_for({"avatar_speech": line}), "duration": duration, "aspect_ratio": aspect_for(w, h),
+            "resolution": resolution, "generate_audio": True, "safety_tolerance": 2, "draft": draft,
             "keyframes": [f"data:image/jpeg;base64,{base64.b64encode(img.read_bytes()).decode()}"]}
-    print(f"[{row['person_id']}] submitting i2v {resolution}{' draft' if draft else ''}, {w}x{h} → {body['aspect_ratio']}, {words} words, ~${RATE['draft' if draft else resolution] * DURATION:.2f}")
-    r = bfl("POST", f"{API}/flux-3-video", json=body)
-    try: sub = r.json()
-    except ValueError: sub = {"raw": r.text[:300]}
-    (RAW / f"{row['person_id']}.video_submit.json").write_text(json.dumps(sub, indent=1))
-    if r.status_code >= 400 or "polling_url" not in sub: print(f"  {explain_4xx(r)}"); return
-    print(f"  id={sub['id']}")
-    last, t0 = None, time.time()
+    sub = resumable_render(tag)  # a render submitted by an earlier attempt (restart, retry) is polled first, not paid for again
+    if sub: print(f"[{tag}] resuming BFL render {sub['id'][:8]}… from an earlier attempt")
+    else:
+        print(f"[{tag}] submitting i2v {resolution}{' draft' if draft else ''}, {w}x{h} → {body['aspect_ratio']}, {words} words / {duration}s, ~${RATE['draft' if draft else resolution] * duration:.2f}")
+        r = bfl("POST", f"{API}/flux-3-video", json=body)
+        try: sub = r.json()
+        except ValueError: sub = {"raw": r.text[:300]}
+        (RAW / f"{tag}.video_submit.json").write_text(json.dumps(sub, indent=1))
+        if r.status_code >= 400 or "polling_url" not in sub: print(f"  {explain_4xx(r)}"); return None
+        print(f"  id={sub['id']}")
+    last, t0, hiccups = None, time.time(), 0
     while time.time() - t0 < 1200:
-        try: res = bfl("GET", sub["polling_url"]).json()
-        except Exception as e: print(f"  polling hiccup: {e}"); time.sleep(10); continue
+        # Poll directly, not through bfl(): BFL reports a terminal "Error" with HTTP 500, which must be read as a status, not retried as an outage.
+        try: res = requests.get(sub["polling_url"], headers=H, timeout=60).json(); hiccups = 0
+        except (requests.RequestException, ValueError) as e:
+            hiccups += 1
+            if hiccups >= 6: print(f"  polling failed {hiccups} times in a row ({e}); giving up on {sub['id']}"); return None
+            print(f"  polling hiccup: {e}"); time.sleep(10); continue
         if res.get("status") != last: last = res.get("status"); print(f"  {time.strftime('%H:%M:%S')} {last}")
         if last not in RUNNING: break
         time.sleep(6)
     else:
-        print(f"  gave up waiting after 20 min; BFL run {sub['id']} may still finish (GET {sub['polling_url']})"); return
-    (RAW / f"{row['person_id']}.video_result.json").write_text(json.dumps(res, indent=1))
+        print(f"  gave up waiting after 20 min; BFL run {sub['id']} may still finish (GET {sub['polling_url']})"); return None
+    (RAW / f"{tag}.video_result.json").write_text(json.dumps(res, indent=1))
     if last == "Error" and not retried:  # BFL's "Server side error" is partly flaky; failed runs are not charged
-        print("  BFL server-side error — retrying once"); return animate(row, resolution, draft, retried=True)
+        print("  BFL server-side error — retrying once"); return render_clip(img, line, out, tag, duration, resolution, draft, retried=True)
+    if last == "Error": return None
     if last in ("Request Moderated", "Content Moderated"):
-        print(f"  BFL moderated the {'input photo/prompt' if last.startswith('Request') else 'generated video'}: {json.dumps(res.get('details'))[:300]}"); return
-    if last != "Ready": print(f"  {last}: {json.dumps(res.get('details') or res)[:400]}"); return
-    VIDEOS.mkdir(exist_ok=True); out = VIDEOS / f"{row['person_id']}{'-draft' if draft else ''}.mp4"
-    if not download(res["result"]["sample"], out): print("  could not download the clip (BFL URL expires in ~2h)"); return
-    row["avatar_video"] = str(out.relative_to(ROOT))
-    print(f"  saved {row['avatar_video']} ({out.stat().st_size // 1024} KB), settled cost={res.get('cost')}")
+        print(f"  BFL moderated the {'input photo/prompt' if last.startswith('Request') else 'generated video'}: {json.dumps(res.get('details'))[:300]}"); return None
+    if last != "Ready": print(f"  {last}: {json.dumps(res.get('details') or res)[:400]}"); return None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if not download(res["result"]["sample"], out): print("  could not download the clip (BFL URL expires in ~2h)"); return None
+    print(f"  saved {out.relative_to(ROOT)} ({out.stat().st_size // 1024} KB), settled cost={res.get('cost')}")
+    return res.get("cost")
+
+
+def resumable_render(tag):
+    """The submit record of a render whose result was never collected (no result file, or a non-terminal one)."""
+    sub_p, res_p = RAW / f"{tag}.video_submit.json", RAW / f"{tag}.video_result.json"
+    if not sub_p.is_file(): return None
+    try: sub = json.loads(sub_p.read_text())
+    except ValueError: return None
+    if "polling_url" not in sub: return None
+    if res_p.is_file():
+        try: status = json.loads(res_p.read_text()).get("status")
+        except ValueError: status = None
+        if status not in RUNNING: return None  # already settled (Ready, Error, moderated): nothing to resume
+    return sub
+
+
+def animate(row, resolution, draft):
+    src = headshot(row["person_id"])
+    if not src: print(f"[{row['person_id']}] no verified photo — upload one first"); return
+    img = flux_ready(src)
+    row["avatar_speech"] = speech_for(row)
+    if not row["avatar_speech"]: print(f"[{row['person_id']}] nothing to say yet: research found no headline/company and no script"); return
+    out = VIDEOS / f"{row['person_id']}{'-draft' if draft else ''}.mp4"
+    if render_clip(img, row["avatar_speech"], out, row["person_id"], DURATION, resolution, draft) is not None:
+        row["avatar_video"] = str(out.relative_to(ROOT))
 
 
 if __name__ == "__main__":
@@ -164,6 +198,6 @@ if __name__ == "__main__":
     ids = [a for a in args if not a.startswith("--")]
     rows = read_csv(DATA / "people.csv")
     print(f"estimate: {len(ids)} clips x {DURATION}s x ${RATE['draft' if draft else resolution]}/s = ~${len(ids) * DURATION * RATE['draft' if draft else resolution]:.2f}\n")
+    import enrich
     for row in rows:
-        if row["person_id"] in ids: animate(row, resolution, draft)
-    write_csv(DATA / "people.csv", rows)
+        if row["person_id"] in ids: animate(row, resolution, draft); enrich.merge_rows(DATA / "people.csv", [row])

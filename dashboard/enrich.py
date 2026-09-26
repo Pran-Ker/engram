@@ -1,5 +1,5 @@
 """Enrich people.csv rows via Nimble: search (posts/sources), extract (verified image), agent run (structured fields)."""
-import csv, json, os, re, sys, time
+import csv, json, os, re, sys, threading, time
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
@@ -31,8 +31,22 @@ def ensure_data_files():
 ensure_data_files()
 
 
+CSV_LOCK = threading.Lock()  # held only for a read-modify-write of one CSV, never across an API call
+
+
 def fields_of(p): return next(csv.reader(open(p, newline="", encoding="utf-8")))
 def read_csv(p): return list(csv.DictReader(open(p, newline="", encoding="utf-8")))
+
+
+def merge_rows(p, changed, key="person_id"):
+    """Write only these rows into the table: re-read it under the lock so concurrent jobs never clobber each other."""
+    with CSV_LOCK:
+        rows = read_csv(p); fields = fields_of(p); by = {r[key]: i for i, r in enumerate(rows)}
+        for r in changed:
+            row = {f: r.get(f, "") for f in fields}
+            if r[key] in by: rows[by[r[key]]] = row
+            else: rows.append(row)
+        write_csv(p, rows, fields)
 def write_csv(p, rows, fields):
     tmp = Path(p).with_suffix(Path(p).suffix + ".tmp")
     with open(tmp, "w", newline="", encoding="utf-8") as f:
@@ -49,9 +63,10 @@ def nimble(method, path, **kw):
     try: return r.status_code, r.json()
     except ValueError: raise RuntimeError(f"Nimble returned non-JSON ({r.status_code}): {r.text[:200]}")
 def append_rows(p, rows, key):
-    existing = read_csv(p); seen = {(r["person_id"], r[key]) for r in existing}
-    new = [r for r in rows if (r["person_id"], r[key]) not in seen]
-    write_csv(p, existing + new, list(existing[0].keys()) if existing else list(new[0].keys()))
+    with CSV_LOCK:
+        existing = read_csv(p); seen = {(r["person_id"], r[key]) for r in existing}
+        new = [r for r in rows if (r["person_id"], r[key]) not in seen]
+        write_csv(p, existing + new, fields_of(p) if existing or Path(p).is_file() else list(new[0].keys()))
     return len(new)
 RAW.mkdir(exist_ok=True)
 def dump(pid, name, obj): (RAW / f"{pid}.{name}.json").write_text(json.dumps(obj, indent=1))
@@ -163,9 +178,12 @@ def enrich(rows, targets):
             row["source_urls"] = " ".join(dict.fromkeys(filter(None, row["source_urls"].split() + urls + [prof_url])))
             row["nimble_queries_used"] = f"search:lite:{q!r}; extract:{prof_url or '-'}; agent:medium"
             print(f"  {len(urls)} urls, +{n_p} posts, +{n_i} images")
-        ids = start_agent(row)
+        ids = resumable_agent(row["person_id"])  # a run started by an earlier attempt (restart, retry) is polled, not paid for twice
+        if ids: print(f"  resuming agent run {ids[1][:12]}… from an earlier attempt")
+        else: ids = start_agent(row)
         if ids: started[row["person_id"]] = ids
         row["enrichment_status"] = "partial"
+        merge_rows(DATA / "people.csv", [row])
     for row in todo:
         if row["person_id"] not in started: continue
         print(f"[{row['person_id']}] waiting on agent")
@@ -185,7 +203,15 @@ def enrich(rows, targets):
         row["enrichment_status"] = "complete" if content else "partial"
         row["last_enriched_at"] = time.strftime("%Y-%m-%dT%H:%M")
         print(f"  filled {sum(1 for k in AGENT_FIELDS if content.get(k))}/{len(AGENT_FIELDS)} fields, {len(cites)} citations")
-    write_csv(DATA / "people.csv", rows, list(rows[0].keys()))
+        merge_rows(DATA / "people.csv", [row])  # only this person's row: other jobs may be writing theirs
+
+
+def resumable_agent(pid):
+    """(agent_id, run_id) of a run that was started but never collected — its result is still waiting on Nimble's side."""
+    start, done = RAW / f"{pid}.agent_start.json", RAW / f"{pid}.agent_result.json"
+    if not start.is_file() or done.is_file(): return None
+    try: j = json.loads(start.read_text()); return (j["web_search_agent_id"], j["id"]) if "id" in j else None
+    except (ValueError, KeyError): return None
 
 
 def has_headshot(pid):

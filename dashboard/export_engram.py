@@ -3,7 +3,7 @@
 Run:  python3 export_engram.py <person_id> [--engram http://127.0.0.1:4100]
 The dashboard's "Talk to me" button calls the same function.
 """
-import base64, csv, json, os, sys
+import base64, csv, hashlib, json, os, sys, time
 from pathlib import Path
 import requests
 import animate  # also loads .env into the environment
@@ -28,12 +28,26 @@ def payload(pid):
     return body
 
 
-def export(pid, api=ENGRAM_API):
-    """Create or refresh the direct engram; returns Engram's JSON (slug, cards, video, url)."""
-    r = requests.post(f"{api}/api/direct/engrams", json=payload(pid), timeout=600)
+MARKS = ROOT / "data" / "raw" / "engram-exports.json"  # per person: signature of the last exported payload + Engram's reply
+
+
+def export(pid, api=ENGRAM_API, force=False):
+    """Create or refresh the direct engram; returns Engram's JSON (slug, cards, video, url).
+    Skips the round trip when the row, photo and clip are unchanged since the last export and Engram still has the folder."""
+    body = payload(pid)
+    sig = hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    marks = json.loads(MARKS.read_text()) if MARKS.is_file() else {}
+    last = marks.get(pid)
+    if not force and last and last["sig"] == sig:
+        try:
+            if requests.get(f"{api}/api/engrams/{last['result']['slug']}", timeout=10).ok: return last["result"] | {"cached": True}
+        except requests.RequestException: pass
+    r = requests.post(f"{api}/api/direct/engrams", json=body, timeout=600)
     try: j = r.json()
     except ValueError: j = {"error": r.text[:300]}
     if r.status_code >= 300: raise RuntimeError(j.get("error") or f"engram {r.status_code}")
+    marks[pid] = {"sig": sig, "result": j, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    MARKS.parent.mkdir(parents=True, exist_ok=True); MARKS.write_text(json.dumps(marks, indent=1))
     return j
 
 
