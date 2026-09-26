@@ -4,30 +4,61 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Talking Avatars</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#f3efe7">
 <style>
-:root{--bg:#f4f1ea;--card:#fff;--line:#d9d3c7;--ink:#1c1b19;--muted:#6b675f;--accent:#0b5cad;--ok:#1e7f4f;--warn:#9a6700;--bad:#a61b1b}
+:root{--bg:#f3efe7;--card:#fff;--glass:rgba(255,255,255,.58);--glass-line:rgba(255,255,255,.75);--line:#e2dccf;--ink:#1c1b19;--muted:#5f5b53;--faint:#8a857b;--accent:#d94f22;--accent-hover:#c4431a;--ok:#1e7f4f;--warn:#9a6700;--bad:#b3261e}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+body{margin:0;background:var(--bg);background-image:radial-gradient(60% 40% at 8% 0%,rgba(217,79,34,.16),transparent 70%),radial-gradient(50% 45% at 100% 20%,rgba(120,150,210,.18),transparent 70%),radial-gradient(60% 50% at 50% 110%,rgba(217,79,34,.10),transparent 70%);background-attachment:fixed;min-height:100vh;color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 64px}
-h1{font-size:28px;margin:0 0 4px;letter-spacing:-.01em}
-.head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
-.switch{font-size:13px;user-select:none}
-body.dev .switch{color:var(--accent);font-weight:600}
-.sub{color:var(--muted);margin:0 0 24px;max-width:70ch}
-form{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;display:grid;gap:12px;margin-bottom:28px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.01em;font-weight:600}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:4px}
+.top a.engram{flex:none;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px 0 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--muted);font-weight:500;font-size:14px;text-decoration:none;transition:border-color .12s ease,color .12s ease}
+.top a.engram:hover{border-color:var(--accent);color:var(--accent)}
+.top .tools{display:flex;align-items:center;gap:8px;flex:none}
+.top .devbtn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--faint);font-size:12px;font-weight:500;letter-spacing:.02em;cursor:pointer}
+.top .devbtn::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--line)}
+.top .devbtn:hover{border-color:var(--accent);color:var(--accent)}
+.top .devbtn[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.top .devbtn[aria-pressed="true"]::before{background:var(--accent)}
+.top a.engram svg{flex:none}
+.sub{color:var(--muted);margin:0 0 24px;max-width:64ch}
+form{background:var(--glass);backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);border:1px solid var(--glass-line);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 12px 32px rgba(28,27,25,.06);border-radius:16px;padding:18px 20px;display:grid;gap:12px;margin-bottom:28px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-input[type=text],input[type=url]{flex:1;min-width:240px;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
-input[type=file]{font:inherit;font-size:14px;color:var(--muted)}
+input[type=text],input[type=url]{flex:1;min-width:240px;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+input[type=text]:focus,input[type=url]:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px rgba(217,79,34,.14)}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.pick{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-weight:500;font-size:14px;cursor:pointer;transition:border-color .12s ease,color .12s ease,background .12s ease}
+.pick:hover{border-color:var(--accent);color:var(--accent)}
+.pick svg{flex:none;color:var(--muted)}
+.pick:hover svg{color:var(--accent)}
+input[type=file]:focus-visible+.pick{outline:2px solid var(--accent);outline-offset:2px}
+.picked{font-size:14px;color:var(--muted)}
 button{font:inherit;font-weight:600;padding:10px 18px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+button:hover{background:var(--accent-hover)}
 button:disabled{opacity:.5;cursor:default}
-label.chk{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px}
-.cost{font-size:13px;color:var(--muted)}
-.cost b{color:var(--ink)}
+label.chk{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:14px;cursor:pointer;line-height:1.35}
+label.chk input{accent-color:var(--accent);margin:0;width:18px;height:18px;flex:none}
+.row.actions{justify-content:space-between;align-items:center;gap:16px;margin-top:6px;padding-top:14px;border-top:1px solid rgba(28,27,25,.08)}
+.row.actions button{flex:none;margin-left:auto;padding:11px 20px}
+.row.photos{gap:14px}
+.hint{font-size:13px;color:var(--faint)}
 .err{color:var(--bad);font-size:14px}
+.devonly{display:none}
+body.dev .devonly{display:block}
+.devpanel{border-top:1px solid rgba(28,27,25,.08);padding-top:12px}
+body.dev .devpanel{display:grid;gap:10px}
+.devbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.devbar button{background:rgba(255,255,255,.6);color:var(--accent);border:1px solid rgba(217,79,34,.55);padding:6px 12px;font-size:13px}
+.devbar button:hover{background:var(--accent);color:#fff}
+pre#log{margin:0;max-height:220px;overflow:auto;background:#1c1b19;color:#e8e4dc;padding:10px 12px;border-radius:8px;font-size:12px;white-space:pre-wrap}
+details.logwrap summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.devinfo{font-size:12px;color:var(--muted);margin-top:8px;border-top:1px dashed var(--line);padding-top:6px;word-break:break-word}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
 .thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
-pre#log{margin:0;max-height:180px;overflow:auto;background:#1c1b19;color:#e8e4dc;padding:10px 12px;border-radius:8px;font-size:12px;white-space:pre-wrap}
-.progress{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.progress{display:grid;gap:10px;border-top:1px solid rgba(28,27,25,.08);padding-top:14px;margin-top:2px}
 .steps{display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:14px}
 .step{display:flex;gap:8px;align-items:center;color:var(--muted)}
 .step .n{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:600}
@@ -39,38 +70,39 @@ pre#log{margin:0;max-height:180px;overflow:auto;background:#1c1b19;color:#e8e4dc
 @keyframes spin{to{transform:rotate(360deg)}}
 .elapsed{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
 .card .img{position:relative}
-.card .img .veil{position:absolute;inset:0;background:rgba(255,255,255,.55);display:grid;place-items:center}
+.card .img .veil{position:absolute;inset:0;background:rgba(255,255,255,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;z-index:2}
 .card .img .veil .spin{width:34px;height:34px;border-width:3.5px}
-details.logwrap summary{cursor:pointer;font-size:13px;color:var(--muted)}
-.devonly{display:none}
-body.dev .devonly{display:block}
-.devinfo{font-size:12px;color:var(--muted);margin-top:8px;border-top:1px dashed var(--line);padding-top:6px;word-break:break-word}
-.devpanel{border-top:1px dashed var(--line);padding-top:12px}
-body.dev .devpanel{display:grid;gap:10px}
-.devbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-.devbar button{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:6px 12px;font-size:13px}
 @media (prefers-reduced-motion: reduce){.spin{animation-duration:3s}}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-align:left;padding:0;font:inherit;color:inherit;display:flex;flex-direction:column}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px}
+.card{position:relative;background:var(--glass);backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);border:1px solid var(--glass-line);border-radius:18px;overflow:hidden;text-align:left;padding:8px;font:inherit;color:inherit;display:flex;flex-direction:column;box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 10px 30px rgba(28,27,25,.07);transition:transform .22s cubic-bezier(.22,1,.36,1),box-shadow .22s ease,border-color .22s ease}
 .card.play .img,.card.play .name{cursor:pointer}
-.card.play:hover{border-color:var(--accent)}
+.card.play:hover{transform:translateY(-3px);border-color:rgba(217,79,34,.45);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 22px 48px rgba(28,27,25,.13),0 0 0 1px rgba(217,79,34,.15)}
+.card .img::after{content:'';position:absolute;inset:auto 0 0 0;height:38%;background:linear-gradient(to top,rgba(255,255,255,.55),transparent);pointer-events:none}
+.card.play .img::before{content:'';position:absolute;inset:0;background:radial-gradient(60% 60% at 50% 50%,transparent 55%,rgba(217,79,34,0) 100%);opacity:0;transition:opacity .22s ease;pointer-events:none;z-index:1}
 .card .bio{font-size:13px;color:var(--muted);margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
 .card .foot{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:10px;min-height:32px;flex-wrap:wrap}
 .card .foot .pill{white-space:nowrap;margin-top:0}
 button.act{padding:6px 12px;font-size:13px;border-radius:8px}
-button.act.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+button.act.ghost{background:rgba(255,255,255,.6);color:var(--accent);border:1px solid rgba(217,79,34,.55)}
+button.act.ghost:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.act.confirm{background:var(--warn)}
-.card .img{aspect-ratio:1;background:#e7e1d4;display:grid;place-items:center;font-size:40px;color:var(--muted);overflow:hidden}
-.card img{width:100%;height:100%;object-fit:cover;display:block}
-.card .body{padding:10px 12px 12px}
+button.act.confirm:hover{background:#7f5500}
+.card .img{aspect-ratio:1;background:rgba(233,227,214,.7);display:grid;place-items:center;font-size:40px;color:var(--muted);overflow:hidden;border-radius:12px}
+.card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s cubic-bezier(.22,1,.36,1)}
+.card.play:hover img{transform:scale(1.03)}
+.card .body{padding:10px 8px 6px}
 .card .name{font-weight:600}
 .card .role{font-size:13px;color:var(--muted);min-height:2.6em}
-.pill{display:inline-block;margin-top:6px;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill{display:inline-block;margin-top:6px;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid rgba(28,27,25,.12);background:rgba(255,255,255,.55);color:var(--muted)}
 .pill.ok{color:var(--ok);border-color:var(--ok)}
 .pill.busy{color:var(--warn);border-color:var(--warn)}
 .pill.bad{color:var(--bad);border-color:var(--bad)}
-dialog{border:0;border-radius:14px;padding:0;max-width:min(92vw,560px);background:var(--card)}
-dialog::backdrop{background:rgba(0,0,0,.55)}
+.pill.devonly{display:none}
+body.dev .pill.devonly{display:inline-block}
+body.dev .pill.nodev{display:none}
+dialog{border:1px solid var(--glass-line);border-radius:18px;padding:8px;max-width:min(92vw,560px);background:rgba(255,255,255,.7);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 24px 64px rgba(28,27,25,.25)}
+dialog::backdrop{background:rgba(28,27,25,.35);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+dialog video{border-radius:12px}
 dialog video{width:100%;display:block;background:#000}
 dialog .cap{padding:12px 16px 16px}
 dialog .cap p{margin:6px 0 0;color:var(--muted);font-size:14px}
@@ -79,38 +111,38 @@ dialog .cap p{margin:6px 0 0;color:var(--muted);font-size:14px}
 </head>
 <body>
 <div class="wrap">
-<div class="head"><h1>Talking Avatars</h1><label class="chk switch"><input type="checkbox" id="devtoggle"> Dev mode</label></div>
-<p class="sub">1 · Give your name, a profile link and a photo or two — Nimble researches you and your company and creates your avatar card. 2 · Press <b>Bring to life</b> on the card — FLUX 3 makes your avatar say it. 3 · Click the avatar to play.</p>
+<div class="top"><h1>Talking Avatars</h1><div class="tools"><a class="engram" id="engramLink" href="http://localhost:4173" target="_blank" rel="noopener" title="The Engram app: stage, talk page and context bank for every avatar"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1.5"/><path d="M6 13.5h4"/></svg>Open Engram</a><button type="button" class="devbtn" id="devbtn" aria-pressed="false" title="Dev mode: pipeline log, ids and the speech check">dev</button></div></div>
+<p class="sub">Your name, a profile link and a photo. Nimble researches you and your company, FLUX 3 brings your avatar to life, and then you can talk to it.</p>
 
 <form id="f">
   <div class="row">
     <input type="text" id="name" placeholder="Your name" autocomplete="off">
     <input type="text" id="url" placeholder="LinkedIn / X / GitHub profile URL" autocomplete="off" inputmode="url">
   </div>
-  <div class="row">
+  <div class="row photos">
     <input type="file" id="photos" accept="image/*,.heic,.heif,.avif" multiple>
+    <label class="pick" for="photos"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4" width="13" height="9.5" rx="2"/><circle cx="8" cy="8.75" r="2.5"/><path d="M5.5 4l1-2h3l1 2"/></svg>Add photos</label>
+    <span class="picked" id="picked"></span>
     <div class="thumbs" id="thumbs"></div>
+    <span class="hint">Up to 5, one clear face.</span>
   </div>
-  <div class="cost">Photos: up to 5, each under 8 MB · JPEG, PNG, WebP, GIF (first frame), HEIC/HEIF/AVIF · any aspect ratio, rotated phone photos are fine · one clear face, no logos. Originals are stored untouched.</div>
-  <div class="row">
+  <div class="row actions">
     <label class="chk"><input type="checkbox" id="consent"> This is me, or I have this person's permission to generate their likeness</label>
-    <label class="chk"><input type="checkbox" id="hd"> Full HD when bringing to life</label>
     <button id="go" type="submit">Create my avatar</button>
   </div>
-  <div class="cost">Create avatar: <b>~$0.10</b> Nimble agent run (2–4 min) · Bring to life: <b id="clipcost">~$0.90</b> FLUX 3 clip (1–2 min) · BFL balance: <b id="bal">…</b></div>
   <div class="err" id="err" hidden></div>
   <div class="progress" id="progress" hidden>
     <div class="steps">
       <span class="spin" id="pspin"></span>
-      <span class="step" id="s1"><span class="n">1</span><span>Researching with Nimble <small>(≈2–4 min)</small></span></span>
-      <span class="step" id="s2"><span class="n">2</span><span>Rendering the talking avatar with FLUX 3 <small>(≈1–2 min)</small></span></span>
+      <span class="step" id="s1"><span class="n">1</span><span>Researching with Nimble</span></span>
+      <span class="step" id="s2"><span class="n">2</span><span>Bringing the avatar to life with FLUX 3</span></span>
       <span class="elapsed" id="elapsed"></span>
     </div>
     <div id="ptext" style="font-size:14px"></div>
   </div>
   <div class="devpanel devonly">
-    <div class="devbar"><b>dev mode</b> <button type="button" id="verify">Run speech check (Whisper, local, ~2 min)</button> <span id="vres"></span></div>
-    <details class="logwrap" id="logwrap"><summary>Pipeline log (current job)</summary><pre id="log">(no job yet)</pre></details>
+    <div class="devbar"><b>dev</b> <span>the dev button top right (or /#dev) turns this off and on</span> <button type="button" id="verify">Run speech check (Whisper, local)</button> <span id="vres"></span></div>
+    <details class="logwrap" id="logwrap" open><summary>Pipeline log (current or last job)</summary><pre id="log">(no job yet)</pre></details>
   </div>
 </form>
 
@@ -143,11 +175,11 @@ function showProgress(s, name) {
   $('s2').className = 'step ' + (stage === 'animating' ? 'active' : done ? 'done' : failed ? 'failed' : '');
   $('elapsed').textContent = `${String(Math.floor((s.elapsed || 0) / 60)).padStart(2, '0')}:${String((s.elapsed || 0) % 60).padStart(2, '0')}`;
   $('ptext').textContent = {
-    queued: `Queued — ${name} is next in line.`,
+    queued: `Queued: ${name} is next in line.`,
     enriching: `Nimble is researching ${name} and their company, and writing what they'll say.`,
-    animating: `FLUX 3 is animating ${name}'s photo and generating their voice — one call, lip-synced.`,
-    done: animating ? `${name}'s avatar is alive — playing it now.` : `${name}'s avatar card is ready. Press “Bring to life” on it to make it speak.`,
-    failed: `Something went wrong for ${name} — see the log.` }[stage] || '';
+    animating: `FLUX 3 is animating ${name}'s photo and generating their voice.`,
+    done: animating ? `${name}'s avatar is alive.` : `${name}'s avatar card is ready. Press “Bring to life” on it to make it speak.`,
+    failed: `Something went wrong for ${name}: ${s.reason || 'the pipeline stopped'}. Try again.` }[stage] || '';
 }
 
 let armed = null;
@@ -155,12 +187,12 @@ function card(p) {
   const busy = ACTIVE.includes(p.job), el = document.createElement('div');
   el.className = 'card' + (p.avatar_video && !busy ? ' play' : '');
   const initials = (p.full_name || p.person_id).split(/[\s-]+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const status = busy ? `<span class="pill busy">${p.job}…</span>` : p.job === 'failed' ? `<span class="pill bad" title="Details in Dev mode → pipeline log">${esc(p.reason || 'failed')}</span>`
+  const status = busy ? `<span class="pill busy">${p.job}…</span>` : p.job === 'failed' ? `<span class="pill bad devonly">${esc(p.reason || 'failed')}</span><span class="pill nodev">avatar created</span>`
                : p.avatar_video ? '<span class="pill ok">▶ click to play</span>'
                : p.enrichment_status === 'complete' ? '<span class="pill">avatar created</span>' : `<span class="pill">${esc(p.enrichment_status || 'pending')}</span>`;
-  const action = busy ? '' : p.avatar_video ? `<button class="act ghost" data-engram title="Build this person's direct engram and open a conversation">Talk to me</button>`
+  const action = busy ? '' : p.avatar_video ? `<button class="act ghost" data-engram title="Open a conversation with this avatar">Talk to me</button>`
                : !p.image ? `<button class="act ghost" data-photo>Add a photo</button>`
-               : p.enrichment_status === 'complete' ? `<button class="act ${armed === p.person_id ? 'confirm' : ''}">${armed === p.person_id ? `Confirm · ~$${$('hd').checked ? '2.55' : '0.90'}` : 'Bring to life'}</button>` : '';
+               : p.enrichment_status === 'complete' ? `<button class="act ${armed === p.person_id ? 'confirm' : ''}">${armed === p.person_id ? 'Confirm' : 'Bring to life'}</button>` : '';
   const veil = busy ? '<div class="veil"><span class="spin"></span></div>' : '';
   el.innerHTML = `<div class="img">${p.image ? `<img src="/${p.image}" alt="">` : initials}${veil}</div>
     <div class="body"><div class="name">${esc(p.full_name || p.person_id)}</div>
@@ -168,38 +200,41 @@ function card(p) {
     <p class="bio">${esc(p.bio_summary)}</p>
     <div class="foot">${status}${action}</div>
     ${p.avatar_video && p.speech_match !== '' ? `<div class="devonly devinfo"><b>speech check ${esc(p.speech_match)}%</b> · heard: “${esc(p.speech_heard)}”</div>` : ''}
-    <div class="devonly devinfo">id ${esc(p.person_id)} · ${esc(p.enrichment_status)}${p.avatar_video ? ' · ' + esc(p.avatar_video) : ''}</div></div>`;
+    <div class="devonly devinfo">id ${esc(p.person_id)} · ${esc(p.enrichment_status)}${p.job ? ' · job ' + esc(p.job) : ''}${p.reason ? ' · ' + esc(p.reason) : ''}${p.avatar_video ? ' · ' + esc(p.avatar_video) : ''}</div></div>`;
   if (p.avatar_video && !busy) el.querySelector('.img').onclick = el.querySelector('.name').onclick = () => play(p);
+  const bad = el.querySelector('.pill.bad'); if (bad) { bad.title = 'Click to load this job\'s log (dev)'; bad.style.cursor = 'pointer'; bad.onclick = () => { location.hash = '#dev'; status(p.person_id); $('progress').hidden = false; }; }
   const b = el.querySelector('button.act');
   if (b) b.onclick = () => 'photo' in b.dataset ? addPhotoFor(p) : 'engram' in b.dataset ? talkTo(p, b) : bringToLife(p);
   return el;
 }
 
-async function talkTo(p, button) {  // POST the row + photo + clip into Engram's direct mode, then open the stage in a new tab
-  button.disabled = true; button.textContent = 'Building…'; $('err').hidden = true;
+fetch('/api/config').then(r => r.json()).then(c => { if (c.engram_stage) $('engramLink').href = c.engram_stage; }).catch(() => {});
+
+async function talkTo(p, button) {  // build (or refresh) the person's engram, then open Engram's talk page
+  button.disabled = true; button.textContent = 'Opening…'; $('err').hidden = true;
   try {
     const r = await fetch('/api/engram/' + encodeURIComponent(p.person_id), { method: 'POST' });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || `Engram failed (${r.status}).`);
     button.textContent = 'Talk to me ↗'; button.disabled = false; button.onclick = () => window.open(j.talk, '_blank');
-    window.open(j.talk, '_blank');  // our themed talk page; it links to the Engram stage too
+    window.open(j.talk, '_blank');
   } catch (e) { $('err').textContent = e.message; $('err').hidden = false; button.disabled = false; button.textContent = 'Talk to me'; }
 }
 
 function bringToLife(p) {
-  if (armed !== p.person_id) {  // first press arms, second confirms — no accidental spend
+  if (armed !== p.person_id) {  // first press arms, second confirms
     armed = p.person_id; $('grid').replaceChildren(...peopleCache.map(card));
     setTimeout(() => { if (armed === p.person_id) { armed = null; load(); } }, 6000); return;
   }
   armed = null;
-  post({ person_id: p.person_id, step: 'animate', consent: true, hd: $('hd').checked })
+  post({ person_id: p.person_id, step: 'animate', consent: true })
     .then(() => { current = p.person_id; $('go').disabled = true; showProgress({ stage: 'queued', step: 'animate', elapsed: 0 }, p.full_name); load(); })
     .catch(err => fail(err.message));
 }
 
 function addPhotoFor(p) {
   $('name').value = p.full_name; $('url').value = ''; $('photos').focus(); $('photos').click();
-  $('err').textContent = `No verified photo for ${p.full_name} yet — pick one to upload, then Generate.`; $('err').hidden = false;
+  $('err').textContent = `No photo for ${p.full_name} yet. Pick one to upload, then create the avatar.`; $('err').hidden = false;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -214,18 +249,19 @@ async function status(id) {
   const s = await (await fetch('/api/status?id=' + encodeURIComponent(id))).json();
   const p = peopleCache.find(x => x.person_id === id);
   showProgress(s, p && p.full_name || id);
-  $('log').textContent = s.log || '(waiting for the first log line…)'; $('log').scrollTop = 1e9; if (document.body.classList.contains('dev')) $('logwrap').open = true;
+  $('log').textContent = s.log || '(waiting for the first log line…)'; $('log').scrollTop = 1e9;
   if (s.stage === 'done' || s.stage === 'failed') {
     $('go').disabled = false;
     if (s.stage === 'done' && s.step === 'animate' && p && p.avatar_video && !$('dlg').open) play(p);
     current = null;
-    if (s.stage === 'done') setTimeout(() => { if (!current) $('progress').hidden = true; }, 5000);  // nothing running → no loading strip
+    if (s.stage === 'done') setTimeout(() => { if (!current) $('progress').hidden = true; }, 5000);
   }
 }
 
 const readFile = f => new Promise(res => { const r = new FileReader(); r.onload = () => res({ name: f.name, data: r.result }); r.readAsDataURL(f); });
 $('photos').onchange = async () => {
   const files = [...$('photos').files].slice(0, 5);
+  $('picked').textContent = files.length ? `${files.length} photo${files.length > 1 ? 's' : ''}` : '';
   $('thumbs').replaceChildren(...await Promise.all(files.map(async f => { const i = document.createElement('img'); i.src = (await readFile(f)).data; return i; })));
 };
 
@@ -241,32 +277,34 @@ $('f').onsubmit = async e => {
   e.preventDefault(); $('err').hidden = true; $('go').disabled = true;
   try {
     const files = [...$('photos').files].slice(0, 5), big = files.filter(f => f.size > 8 * 1024 * 1024);
-    if (big.length) throw new Error(`${big.map(f => f.name).join(', ')}: over 8 MB — pick a smaller export.`);
+    if (big.length) throw new Error(`${big.map(f => f.name).join(', ')}: over 8 MB. Pick a smaller export.`);
     const images = await Promise.all(files.map(readFile));
-    const j = await post({ name: $('name').value, url: $('url').value, images, consent: $('consent').checked, hd: $('hd').checked, step: 'enrich' });
-    const who = $('name').value || j.person_id; $('f').reset(); $('thumbs').replaceChildren();
-    if (j.skipped && j.skipped.length) { $('err').textContent = 'Some photos were not usable — ' + j.skipped.join('; '); $('err').hidden = false; }
+    const j = await post({ name: $('name').value, url: $('url').value, images, consent: $('consent').checked, step: 'enrich' });
+    const who = $('name').value || j.person_id; $('f').reset(); $('thumbs').replaceChildren(); $('picked').textContent = '';
+    if (j.skipped && j.skipped.length) { $('err').textContent = 'Some photos were not usable: ' + j.skipped.join('; '); $('err').hidden = false; }
     current = j.person_id; showProgress({ stage: 'queued', step: 'enrich', elapsed: 0 }, who); load();
   } catch (err) { fail(err.message); }
 };
-$('hd').onchange = () => $('clipcost').textContent = $('hd').checked ? '~$2.55' : '~$0.90';
 
-function setDev(on) {  // header switch, remembered per browser; /#dev also turns it on
-  document.body.classList.toggle('dev', on); $('devtoggle').checked = on; $('logwrap').open = on;
+const devSaved = () => { try { return localStorage.getItem('dev') === '1'; } catch { return false; } };
+const setDev = () => {  // presentation stays clean; the small dev button (or /#dev) shows the log, ids and speech check
+  const on = location.hash === '#dev' || (location.hash === '' && devSaved());
+  document.body.classList.toggle('dev', on); $('devbtn').setAttribute('aria-pressed', String(on));
+};
+$('devbtn').onclick = () => {
+  const on = !document.body.classList.contains('dev');
   try { localStorage.setItem('dev', on ? '1' : '0'); } catch {}
-}
-let devSaved = false; try { devSaved = localStorage.getItem('dev') === '1'; } catch {}
-setDev(devSaved || location.hash === '#dev');
-$('devtoggle').onchange = () => setDev($('devtoggle').checked);
-addEventListener('hashchange', () => { if (location.hash === '#dev') setDev(true); });
+  if (on) { if (location.hash !== '#dev') location.hash = '#dev'; }
+  else if (location.hash === '#dev') history.replaceState(null, '', location.pathname + location.search);
+  setDev();
+};
+setDev(); addEventListener('hashchange', setDev);
 $('verify').onclick = async () => {
   $('verify').disabled = true; $('vres').textContent = 'transcribing every clip…';
   try { const j = await (await fetch('/api/verify', { method: 'POST' })).json(); $('vres').textContent = j.error || j.output.trim().split('\n').slice(-6).join(' · '); load(); }
   catch (e) { $('vres').textContent = 'failed: ' + e.message; }
   $('verify').disabled = false;
 };
-
-fetch('/api/credits').then(r => r.json()).then(j => $('bal').textContent = `${j.credits} credits ($${(j.credits / 100).toFixed(2)})`).catch(() => $('bal').textContent = 'n/a');
 const esc = s => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 load();
 </script>

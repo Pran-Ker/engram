@@ -101,22 +101,24 @@ Hardening (so a click works first time — `python3 test_pipeline.py` checks it,
   blips; one automatic retry for BFL's flaky "Server side error" and for an empty Nimble agent run;
   result download verified (mp4) and retried; no image scrape when a photo was uploaded.
 - CSV writes are atomic (temp file + rename), so the page never reads a half-written table.
-- **Dev mode** (switch in the page header, remembered per browser; `/#dev` also turns it on) shows a
-  dev panel with the pipeline log (auto-expanded) and a "Run speech check" button, plus per-card
-  id/status/clip path and, for rendered clips, a Whisper score with what was heard.
-- **Speech check (dev tool, not a gate)** — the button runs `verify_clips.py` locally (no credits;
-  or `uv run --python 3.12 --with faster-whisper python verify_clips.py`).
-  Scores go to `speech_heard` / `speech_match` in `people.csv`. Known behaviour: FLUX slurs or
-  swaps words in the densest 32–34-word lines (one clip said "at Meta" for "on LinkedIn's team");
-  shorter, plainer lines come out cleaner. Nothing blocks on the score.
+- **Speech check (CLI, not a gate)** — `uv run --python 3.12 --with faster-whisper python verify_clips.py`
+  transcribes every clip locally (no credits) and writes `speech_heard` / `speech_match` to `people.csv`.
+  Known behaviour: FLUX slurs or swaps words in the densest 32–34-word lines (one clip said "at Meta" for
+  "on LinkedIn's team"); shorter, plainer lines come out cleaner. Nothing blocks on the score.
+- **Dev view**: by default the page shows no prices, balances, logs or ids (it is the presentation surface).
+  Open it at **`/#dev`** for the pipeline log panel (current or last job), per-card id/status/job/reason/clip
+  path and speech scores, and a "Run speech check" button (runs `POST /api/verify`); clicking a failed card's
+  red pill loads that job's log. Nothing is persisted: drop the hash and the page is clean again.
+  `GET /api/status?id=` returns a person's log directly.
 
-Loaders: a step indicator with spinner, elapsed time and streaming log under the form, and a spinner
-veil on the card being processed; an in-flight job is picked up again after a page reload. One job
-at a time (global lock) so the CSVs never race. A consent checkbox gates step 1; the live BFL
-balance is shown on the form. The 4 speaker clips are pre-rendered; everyone else is on demand.
+Loaders: a step indicator with spinner and elapsed time under the form, and a spinner veil on the card
+being processed; an in-flight job is picked up again after a page reload. Jobs for different people run
+in parallel (one lock per person; CSV writes are row-merges). A consent checkbox gates step 1. Clips
+render as drafts (960 px); pass `hd: true` to `POST /api/generate` for full HD. The 4 speaker clips are
+pre-rendered; everyone else is on demand.
 
-API: `GET /api/people`, `POST /api/generate {name, url, images:[{name,data(dataURL)}], consent, hd,
-step: "enrich"}` or `{person_id, step: "animate", consent, hd}`, `GET /api/status?id=`,
+API: `GET /api/people`, `POST /api/generate {name, url, images:[{name,data(dataURL)}], consent, hd?,
+step: "enrich"}` or `{person_id, step: "animate", consent, hd?}`, `GET /api/status?id=`,
 `GET /api/credits`, static `/images/*` and `/videos/*` (path-traversal safe).
 
 Everything is local files today; `PLAN-hosting.md` is the (unstarted) plan for moving data, media,
@@ -126,29 +128,31 @@ click events and the dashboard to hosted services.
 
 Cards with a clip carry a **Talk to me** button. It calls `POST /api/engram/<person_id>` here, which runs
 `export_engram.py`: the person's row, posts, FLUX-ready headshot and clip are posted to Engram's
-`POST /api/direct/engrams`, then **`/talk/<person_id>`** opens — a conversation page in this dashboard's own
-theme (`talk.html`). The avatar is the card-sized headshot; while an answer is spoken the muted "bring to
-life" clip plays so the mouth moves, idle shows the photo with a slow breathe. Answers stream from Engram's
-direct-mode `/chat` (Liquid LFM2.5 on OpenRouter). Voice: Engram's Liquid-Audio `/tts` when a voice service
-is deployed, otherwise the browser's speech synthesis — direct engrams need no voice fine-tune. A mic button
-appears where the browser supports speech recognition. The page also links to the original Engram stage.
+`POST /api/direct/engrams`, then Engram's **talk page** opens: `ENGRAM_STAGE/talk/<slug>`
+(`../engram/web/src/pages/TalkPage.tsx`, in Engram's light theme, reachable from Engram's left drawer too).
+The old `/talk/<person_id>` here redirects there. On that page the person's "bring to life" clip plays first
+with its own voice (Engram keeps it as `video/intro.mp4`), answers stream from Engram's direct-mode `/chat`
+(Liquid LFM2.5 on OpenRouter), the face card shows the idle and talk loops, and the microphone is Engram's own
+listen loop.
 
-**Spoken video replies** (default on the talk page): the brain's text goes to `POST /api/reply-clip/<person_id>`,
-which asks FLUX 3 to render the avatar saying it (`animate.render_clip`, draft, 5–20 s sized to the words,
-~$0.60–1.00, 1–2 min); the clip plays with its own voice over the card. Cached per person + text under
-`videos/replies/`. Untick the box for the instant voice (Engram's Liquid Audio if deployed, else the browser).
-Direct-mode answers are kept to ≤30 words so FLUX can voice them.
+**Spoken video replies** (default on the talk page when this dashboard is reachable): Engram calls
+`POST /api/reply-clip/<person_id>` here through its proxy (`/api/engrams/<slug>/reply`, `DASHBOARD_URL`), FLUX 3
+renders the avatar saying the answer (`animate.render_clip`, draft, 5–20 s sized to the words, 1–2 min), and
+the clip plays with its own voice in the face card. Cached per person + text under `videos/replies/`. Untick the
+box for Engram's instant voice. Direct-mode answers are kept to ≤30 words so FLUX can voice them.
 
 Engram must be running (`npm run dev` in `../engram` with `OPENROUTER_API_KEY` set). **Talk to me** re-exports
-only when the person's row, photo or clip changed since the last export (`data/raw/engram-exports.json`), so
-re-opening a conversation is instant; it never waits on the pipeline lock.
+only when the person's row, photo or clip changed since the last export (`data/raw/engram-exports.json`, plus a
+format stamp that is bumped when Engram builds something new from the same payload), so re-opening a
+conversation is instant; it never waits on the pipeline lock. If a rebuild fails but Engram still has the last
+good folder, that one opens.
 
 Nothing is tied to localhost. Addresses come from the environment (or `.env`):
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `ENGRAM_API` | `http://127.0.0.1:4100` | Engram's API; a Railway URL once it is deployed |
-| `ENGRAM_STAGE` | Vite `http://localhost:4173` in dev, else `ENGRAM_API` | where "Talk to me" opens; deployed Engram serves the stage from the API origin |
+| `ENGRAM_STAGE` | Vite `http://localhost:4173` in dev, else `ENGRAM_API` | where "Talk to me" opens (`/talk/<slug>`); deployed Engram serves the web app from the API origin |
 | `HOST`, `PORT` | `127.0.0.1`, `8765` | dashboard bind address; Railway injects `PORT`, set `HOST=0.0.0.0` there and put it behind auth (the page can spend credits) |
 
 Later: a Liquid AI model as the cheap router/summariser in front of the Nimble calls too.

@@ -15,6 +15,7 @@ def person_lock(pid):
     with LOCKS_GUARD: return LOCKS.setdefault(pid, threading.Lock())
 ESTIMATE = {"draft": "~$0.10 Nimble agent run + $0.90 FLUX 3 draft clip", "hd": "~$0.10 Nimble agent run + $2.55 FLUX 3 HD clip"}
 MAX_UPLOAD = 8 * 1024 * 1024
+ICONS = {"/favicon.svg": "image/svg+xml", "/favicon-32.png": "image/png", "/apple-touch-icon.png": "image/png"}
 # Engram's stage. Dev: Vite on :4173 (binds ::1, hence localhost). Deployed: the API serves web/dist, so the stage is the API URL.
 ENGRAM_STAGE = os.environ.get("ENGRAM_STAGE") or ("http://localhost:4173" if "127.0.0.1" in export_engram.ENGRAM_API else export_engram.ENGRAM_API)
 PROFILE_HOSTS = {"linkedin.com": ("linkedin_url", r"^/in/([^/?#]+)"), "x.com": ("twitter_url", r"^/([^/?#]+)"),
@@ -179,7 +180,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/": return self.send(200, (ROOT / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
-        if u.path.startswith("/talk/"): return self.send(200, (ROOT / "talk.html").read_bytes(), "text/html; charset=utf-8")  # our themed stage for a direct engram
+        if u.path.startswith("/talk/"):  # old links: the conversation now lives on Engram's talk page (web/src/pages/TalkPage.tsx)
+            self.send_response(302); self.send_header("Location", f"{ENGRAM_STAGE}/talk/{u.path.rsplit('/', 1)[-1]}"); self.end_headers(); return
+        if u.path in ICONS:  # same favicon as the Engram web app (engram/web/public)
+            f = ROOT.parent / "engram" / "web" / "public" / u.path.lstrip("/")
+            if not f.is_file(): return self.send(404, {"error": "not found"})
+            return self.send(200, f.read_bytes(), ICONS[u.path])
         if u.path == "/api/config": return self.send(200, {"engram_api": export_engram.ENGRAM_API, "engram_stage": ENGRAM_STAGE})
         if u.path == "/api/reply-clip": return self.send(200, REPLIES.get(q.get("job", [""])[0], {"status": "unknown", "error": "No such render job (the server may have restarted)."}))
         if u.path == "/api/people": return self.send(200, people())
@@ -202,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
             if not any(r["person_id"] == pid for r in enrich.read_csv(PEOPLE)): return self.send(404, {"error": "Unknown person."})
             try:
                 j = export_engram.export(pid)  # read-only here (CSV writes are atomic), so it must not wait on the pipeline lock
-                return self.send(200, j | {"stage": f"{ENGRAM_STAGE}{j['url']}", "talk": f"/talk/{pid}"})
+                return self.send(200, j | {"stage": f"{ENGRAM_STAGE}{j['url']}", "talk": f"{ENGRAM_STAGE}/talk/{j['slug']}"})
             except requests.ConnectionError: return self.send(502, {"error": f"Engram API is not running at {export_engram.ENGRAM_API} — start it with `npm run dev` in repos/engram/engram."})
             except Exception as e: return self.send(502, {"error": f"Engram: {e}"})
         if self.path.startswith("/api/reply-clip/"):  # FLUX 3 speaks a reply written by the (Liquid) brain; a background job the page polls

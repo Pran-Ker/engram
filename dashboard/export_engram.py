@@ -29,13 +29,14 @@ def payload(pid):
 
 
 MARKS = ROOT / "data" / "raw" / "engram-exports.json"  # per person: signature of the last exported payload + Engram's reply
+FORMAT = "v2-light-intro"  # bump when Engram changes what it builds from the same payload (letterbox colour, intro clip), so every person re-exports once
 
 
 def export(pid, api=ENGRAM_API, force=False):
     """Create or refresh the direct engram; returns Engram's JSON (slug, cards, video, url).
     Skips the round trip when the row, photo and clip are unchanged since the last export and Engram still has the folder."""
     body = payload(pid)
-    sig = hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    sig = hashlib.sha1(json.dumps(body, sort_keys=True).encode() + FORMAT.encode()).hexdigest()
     marks = json.loads(MARKS.read_text()) if MARKS.is_file() else {}
     last = marks.get(pid)
     if not force and last and last["sig"] == sig:
@@ -45,7 +46,12 @@ def export(pid, api=ENGRAM_API, force=False):
     r = requests.post(f"{api}/api/direct/engrams", json=body, timeout=600)
     try: j = r.json()
     except ValueError: j = {"error": r.text[:300]}
-    if r.status_code >= 300: raise RuntimeError(j.get("error") or f"engram {r.status_code}")
+    if r.status_code >= 300:
+        # Resume, don't block: when the rebuild fails (ffmpeg, disk) but Engram still has the last good folder, open that one.
+        if last and requests.get(f"{api}/api/engrams/{last['result']['slug']}", timeout=10).ok:
+            print(f"engram rebuild failed ({j.get('error') or r.status_code}); opening the last good engram", file=sys.stderr)
+            return last["result"] | {"cached": True, "stale": True, "error": j.get("error")}
+        raise RuntimeError(j.get("error") or f"engram {r.status_code}")
     marks[pid] = {"sig": sig, "result": j, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     MARKS.parent.mkdir(parents=True, exist_ok=True); MARKS.write_text(json.dumps(marks, indent=1))
     return j
