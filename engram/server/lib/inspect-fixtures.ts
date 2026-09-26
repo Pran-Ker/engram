@@ -1,4 +1,4 @@
-import type { InspectCheckpoint, InspectCurvePoint, InspectRun, InspectTurn, InspectWord } from '../../shared/types.ts'
+import type { InspectCheckpoint, InspectRun, InspectTurn, InspectWord } from '../../shared/types.ts'
 
 export function seeded(seed: number) {
   let s = seed >>> 0
@@ -35,72 +35,24 @@ const RUN = {
 
 const CKPT_STEPS = [400, 800, 1200, 1600, 2000, 2400]
 
-function trainLossAt(step: number, noise: () => number, drift: { value: number }) {
-  const p = step / RUN.steps
-  const base = 1.6 + 2.5 * Math.exp(-4.2 * p) + 0.18 * Math.exp(-40 * p)
-  drift.value = drift.value * 0.72 + (noise() - 0.5) * 0.11
-  const jitter = (noise() - 0.5) * 0.09 * (1 - 0.5 * p)
-  return round(base + drift.value + jitter, 4)
-}
-
-function valLossAt(step: number, noise: () => number) {
-  const p = step / RUN.steps
-  const uptick = p > 0.86 ? (p - 0.86) * 1.4 : 0
-  const base = 1.72 + 2.3 * Math.exp(-3.9 * p) + uptick
-  return round(base + (noise() - 0.5) * 0.05, 4)
-}
-
-function speakerSimAt(step: number, noise: () => number) {
-  const p = step / RUN.steps
-  return round(0.41 + 0.42 * (1 - Math.exp(-3.1 * p)) / (1 - Math.exp(-3.1)) + (noise() - 0.5) * 0.012, 4)
-}
-
-function werAt(step: number, noise: () => number) {
-  const p = step / RUN.steps
-  return round(6.2 + 11.8 * Math.exp(-3.4 * p) * (1 - p) + (noise() - 0.5) * 0.3, 2)
-}
-
-export function fixtureCurve(): InspectCurvePoint[] {
-  const noise = seeded(2401)
-  const valNoise = seeded(77)
-  const points: InspectCurvePoint[] = []
-  const drift = { value: 0 }
-  for (let step = 10; step <= RUN.steps; step += 10) {
-    const point: InspectCurvePoint = { step, train: trainLossAt(step, noise, drift) }
-    if (step % 300 === 0) point.val = valLossAt(step, valNoise)
-    points.push(point)
-  }
-  return points
-}
-
-export function fixtureCheckpoints(): InspectCheckpoint[] {
-  const noise = seeded(9001)
-  const curve = fixtureCurve()
-  const startMs = Date.parse(RUN.startedAt)
-  const perStepMs = (RUN.trainMinutes * 60_000) / RUN.steps
-  return CKPT_STEPS.map((step) => {
-    const window = curve.filter((p) => p.step > step - 100 && p.step <= step)
-    const trainLoss = round(window.reduce((a, p) => a + p.train, 0) / window.length, 4)
-    return {
-      step,
-      epoch: Math.round((step / RUN.steps) * RUN.epochs),
-      trainLoss,
-      valLoss: valLossAt(step, seeded(77 + step)),
-      speakerSim: speakerSimAt(step, noise),
-      wer: werAt(step, noise),
-      savedAt: new Date(startMs + step * perStepMs).toISOString(),
-    }
+// Checkpoint slots the run will save at. No loss / speaker-sim / WER until training has run;
+// the inspect charts draw the frame and leave the values empty.
+export function plannedCheckpoints(steps: number, epochs: number): InspectCheckpoint[] {
+  return CKPT_STEPS.map((s) => {
+    const step = Math.round((s / 2400) * steps)
+    return { step, epoch: Math.round((step / steps) * epochs) }
   })
 }
 
 export function fixtureRun(engram: string): InspectRun {
+  const { finishedAt: _f, trainMinutes: _t, ...planned } = RUN
   return {
-    ...RUN,
+    ...planned,
     engram,
-    status: 'done',
-    currentStep: RUN.steps,
-    checkpoints: fixtureCheckpoints(),
-    curve: fixtureCurve(),
+    status: 'pending',
+    currentStep: 0,
+    checkpoints: plannedCheckpoints(RUN.steps, RUN.epochs),
+    curve: [],
     source: 'fixture',
   }
 }
@@ -114,7 +66,6 @@ const DEMO: { user: string; text: string; provider: string }[] = [
   { user: 'What are you building next?', text: "Still converging. I left in July to start a company and I'm raising a seed in SF. Pretty sure it's in the coding agent and program synthesis space.", provider: 'modal:prannay-v1' },
   { user: 'How is your voice being generated right now?', text: "LFM2.5 Audio, one and a half billion parameters, fine tuned on about forty minutes of me reading sentences. It runs on Modal and streams a sentence at a time.", provider: 'modal:prannay-v1' },
   { user: 'Does it actually sound like you?', text: "Closer every checkpoint. Speaker similarity is at point eight three. The pacing is still a little flat on longer sentences, which is what the inspect page is for.", provider: 'modal:prannay-v1' },
-  { user: 'Where did you grow up?', text: "India. Did my undergrad at VIT in Vellore, then a summer at Stanford in twenty twenty four. Took convex optimization with Boyd, which was super fun.", provider: 'modal:prannay-v1' },
   { user: 'What is one opinion most people disagree with you on?', text: "That the interesting part of agents is not the model, it's the environment. If you can't replay the world deterministically you can't train on it.", provider: 'modal:prannay-v1' },
   { user: 'Who is Chinmay?', text: "My brother. We talk most days. He is the reason half my side projects ever got finished.", provider: 'modal:prannay-v1' },
   { user: 'What do you do when you are not working?', text: "Poker, mostly badly. Running around Palo Alto. And reading way too many papers on test time training.", provider: 'modal:prannay-v1' },

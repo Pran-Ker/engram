@@ -27,7 +27,7 @@ export function Header(p: Props) {
     return () => window.removeEventListener('pointerdown', close)
   }, [p.popoverOpen, p.setPopoverOpen])
 
-  const step = p.loadedStep ?? p.run?.currentStep ?? null
+  const step = p.loadedStep ?? (p.run && p.run.status !== 'pending' ? p.run.currentStep : null)
 
   return (
     <header className="ih">
@@ -52,7 +52,9 @@ export function Header(p: Props) {
 }
 
 function CheckpointPopover(p: { checkpoints: InspectCheckpoint[]; loaded: number | null; onLoad: (step: number) => void }) {
-  const bestVal = Math.min(...p.checkpoints.map((c) => c.valLoss))
+  const measured = p.checkpoints.filter((c) => c.valLoss !== undefined)
+  const bestVal = measured.length ? Math.min(...measured.map((c) => c.valLoss!)) : null
+  const fmt = (n: number | undefined, f: (n: number) => string) => (n === undefined ? '—' : f(n))
   return (
     <div className="pop" role="menu">
       <table className="ckpt">
@@ -66,21 +68,23 @@ function CheckpointPopover(p: { checkpoints: InspectCheckpoint[]; loaded: number
               <tr key={c.step} className={isLoaded ? 'is-loaded' : ''}>
                 <td className="mono">{fmtInt(c.step)}</td>
                 <td className="mono dim">{c.epoch}</td>
-                <td className="mono">{c.trainLoss.toFixed(3)}</td>
-                <td className={`mono${c.valLoss === bestVal ? ' best' : ''}`}>{c.valLoss.toFixed(3)}</td>
-                <td className="mono">{c.speakerSim.toFixed(2)}</td>
-                <td className="mono">{c.wer.toFixed(1)}%</td>
+                <td className="mono">{fmt(c.trainLoss, (n) => n.toFixed(3))}</td>
+                <td className={`mono${bestVal !== null && c.valLoss === bestVal ? ' best' : ''}`}>{fmt(c.valLoss, (n) => n.toFixed(3))}</td>
+                <td className="mono">{fmt(c.speakerSim, (n) => n.toFixed(2))}</td>
+                <td className="mono">{fmt(c.wer, (n) => `${n.toFixed(1)}%`)}</td>
                 <td>
                   {isLoaded
                     ? <span className="loaded-tag">loaded</span>
-                    : <button className="btn btn-sm" onClick={() => p.onLoad(c.step)}>Load</button>}
+                    : c.valLoss === undefined
+                      ? <span className="dim">—</span>
+                      : <button className="btn btn-sm" onClick={() => p.onLoad(c.step)}>Load</button>}
                 </td>
               </tr>
             )
           })}
         </tbody>
       </table>
-      <div className="pop-foot dim">val is on 240 held-out clips · sim is ECAPA cosine · lowest val marked</div>
+      <div className="pop-foot dim">{measured.length ? 'val is on 240 held-out clips · sim is ECAPA cosine · lowest val marked' : 'planned checkpoints · metrics fill in once training runs'}</div>
     </div>
   )
 }

@@ -20,6 +20,8 @@ type Props = {
   loaded: number | null
   onLoad: (step: number) => void
   xLabel?: string
+  /** Shown in the legend's right slot when there is nothing hovered or loaded, e.g. "not trained yet". */
+  note?: string
 }
 
 const M = { top: 22, right: 22, bottom: 18, left: 40 }
@@ -54,9 +56,12 @@ export function LineChart(p: Props) {
     return M.top + plotH - ((y - lo) / (hi - lo || 1)) * plotH
   }
 
+  const hasData = p.series.some((s) => s.points.length > 0)
+
+  // No data → grid lines only. Labelling a default [0, 1] domain would read as real numbers.
   const axisLabel = (axis: 'left' | 'right', t: number) => {
-    const s = p.series.find((x) => (x.axis ?? 'left') === axis)
-    return s ? (s.axisFormat ?? s.format)(t) : String(t)
+    const s = p.series.find((x) => (x.axis ?? 'left') === axis && x.points.length > 0)
+    return s ? (s.axisFormat ?? s.format)(t) : ''
   }
 
   const hovered = hoverX === null ? null : p.series.map((s) => nearest(s.points, hoverX))
@@ -69,7 +74,7 @@ export function LineChart(p: Props) {
   }
 
   const onClick = () => {
-    if (hoverX === null) return
+    if (hoverX === null || !hasData) return
     const ck = p.checkpoints.reduce((a, b) => (Math.abs(b - hoverX) < Math.abs(a - hoverX) ? b : a))
     if (Math.abs(sx(ck) - sx(hoverX)) < 14) p.onLoad(ck)
   }
@@ -89,7 +94,7 @@ export function LineChart(p: Props) {
           )
         })}
         <span className="ih-spacer" />
-        <span className="mono dim">{hoverStep !== null ? `step ${fmtInt(Math.round(hoverStep))}` : p.loaded !== null ? `loaded ${fmtInt(p.loaded)}` : ''}</span>
+        <span className="mono dim">{hoverStep !== null ? `step ${fmtInt(Math.round(hoverStep))}` : p.loaded !== null ? `loaded ${fmtInt(p.loaded)}` : p.note ?? ''}</span>
       </div>
       {size.w > 0 && (
         <svg width={size.w} height={size.h} onMouseMove={onMove} onMouseLeave={() => setHoverX(null)} onClick={onClick} style={{ cursor: hoverStep !== null ? 'crosshair' : 'default' }}>

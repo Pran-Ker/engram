@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { DistillJob, DistillJobStatus, EventRow, InspectCheckpoint, InspectFlag, InspectRun, InspectTurn } from '../../shared/types.ts'
-import { fixtureCheckpoints, fixtureCurve, fixtureRun, fixtureTurns, hashText, layoutWords } from '../lib/inspect-fixtures.ts'
+import { fixtureRun, fixtureTurns, hashText, layoutWords, plannedCheckpoints } from '../lib/inspect-fixtures.ts'
 import { loadManifest } from '../lib/engram-store.ts'
 import { sentenceSplitter } from './chat.ts'
 
@@ -18,6 +18,7 @@ const MAX_SENTENCES = 3
 const FIXTURE_SLUG = 'prannay'
 const THROWAWAY_SESSION = /^(test|curl|bench)|bench/i
 const THROWAWAY_PROMPT = /mention (the number|\d)/i
+const HIDDEN_FILE = join(REVIEW_DIR, 'inspect-hidden.json')   // { [slug]: turnId[] }: turns removed from the list by hand (RawTree is append-only)
 const SELF = `http://localhost:${process.env.PORT ?? 4100}`
 
 inspect.get('/:slug/runs', (c) => c.json(loadRuns(c.req.param('slug'))))
@@ -25,7 +26,8 @@ inspect.get('/:slug/runs', (c) => c.json(loadRuns(c.req.param('slug'))))
 inspect.get('/:slug/turns', async (c) => {
   const slug = c.req.param('slug')
   const live = await liveTurns(slug)
-  const turns = (live.length ? live : slug === FIXTURE_SLUG ? fixtureTurns(slug) : []).slice(-50).reverse()
+  const hidden = new Set(hiddenTurns(slug))
+  const turns = (live.length ? live : slug === FIXTURE_SLUG ? fixtureTurns(slug) : []).filter((t) => !hidden.has(t.id)).slice(-50).reverse()
   return c.json(turns.map((t) => attachWav(slug, t)))
 })
 
@@ -121,10 +123,11 @@ function runFromCheckpoint(slug: string, dir: string, id: string): InspectRun {
   const args = JSON.parse(readFileSync(join(dir, 'training_args.json'), 'utf8'))
   const steps = Number(args.steps ?? 2400)
   const finished = Boolean(args.finished)
-  const checkpoints = fixtureCheckpoints().map((ck): InspectCheckpoint => ({
+  const epochs = Number(args.epochs ?? 8)
+  // Slots only. training_args.json carries no eval metrics, so none are shown until a real eval writes them.
+  const checkpoints = plannedCheckpoints(steps, epochs).map((ck): InspectCheckpoint => ({
     ...ck,
-    step: Math.round((ck.step / 2400) * steps),
-    path: ck.step === 2400 && finished ? join(dir, 'final') : undefined,
+    path: ck.step === steps && finished ? join(dir, 'final') : undefined,
   }))
   return {
     id,
@@ -132,7 +135,7 @@ function runFromCheckpoint(slug: string, dir: string, id: string): InspectRun {
     baseModel: String(args.base_model ?? 'LiquidAI/LFM2.5-Audio-1.5B'),
     gpu: 'A100-80GB',
     status: finished ? 'done' : 'running',
-    epochs: Number(args.epochs ?? 8),
+    epochs,
     steps,
     currentStep: finished ? steps : Math.round(steps * elapsedFraction(args.started, args.epochs)),
     batchSize: Number(args.batch_size ?? 16),
@@ -144,7 +147,7 @@ function runFromCheckpoint(slug: string, dir: string, id: string): InspectRun {
     finishedAt: args.finished ? String(args.finished) : undefined,
     trainMinutes: args.train_minutes ? Number(args.train_minutes) : undefined,
     checkpoints,
-    curve: fixtureCurve().map((p) => ({ ...p, step: Math.round((p.step / 2400) * steps) })),
+    curve: [],
     source: 'checkpoints',
   }
 }
@@ -212,6 +215,10 @@ function isoTs(ts: string) {
 function ttsNear(rows: EventRow[], doneTs: string) {
   const t0 = Date.parse(doneTs)
   return rows.find((r) => r.turn == null && Date.parse(r.ts) >= t0 && Date.parse(r.ts) - t0 < 90_000)
+}
+
+function hiddenTurns(slug: string): string[] {
+  try { return (JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')) as Record<string, string[]>)[slug] ?? [] } catch { return [] }
 }
 
 function attachWav(slug: string, turn: InspectTurn): InspectTurn {

@@ -29,6 +29,10 @@ export function InspectPage() {
   const [now, setNow] = useState(Date.now())
 
   const run = runs.data[0] ?? null
+  // A run with planned checkpoints but no metrics has not been trained yet. Charts render empty
+  // and nothing counts as "loaded", even if a stale step is still in localStorage.
+  const trained = run?.checkpoints.some((c) => c.valLoss !== undefined) ?? false
+  const loaded = trained ? loadedStep : null
   const selectedTurnId = params.get('turn') ?? turns.data[0]?.id ?? null
   const turn = turns.data.find((t) => t.id === selectedTurnId) ?? null
   const turnFlags = useMemo(() => flags.data.filter((f) => f.turnId === selectedTurnId), [flags.data, selectedTurnId])
@@ -75,7 +79,9 @@ export function InspectPage() {
 
   useEffect(() => {
     if (loadedStep !== null || !run) return
-    const best = run.checkpoints.reduce((a, b) => (b.valLoss < a.valLoss ? b : a))
+    const measured = run.checkpoints.filter((c) => c.valLoss !== undefined)
+    if (!measured.length) return
+    const best = measured.reduce((a, b) => (b.valLoss! < a.valLoss! ? b : a))
     setLoadedStep(best.step)
   }, [run, loadedStep])
 
@@ -145,8 +151,8 @@ export function InspectPage() {
   ] : [], [run])
 
   const qualitySeries = useMemo(() => run ? [
-    { name: 'speaker sim', color: 'var(--series-1)', points: run.checkpoints.map((c) => ({ x: c.step, y: c.speakerSim })), dots: true, format: (n: number) => n.toFixed(2) },
-    { name: 'WER', color: 'var(--series-2)', points: run.checkpoints.map((c) => ({ x: c.step, y: c.wer })), dots: true, axis: 'right' as const, format: (n: number) => `${n.toFixed(1)}%` },
+    { name: 'speaker sim', color: 'var(--series-1)', points: run.checkpoints.flatMap((c) => c.speakerSim === undefined ? [] : [{ x: c.step, y: c.speakerSim }]), dots: true, format: (n: number) => n.toFixed(2) },
+    { name: 'WER', color: 'var(--series-2)', points: run.checkpoints.flatMap((c) => c.wer === undefined ? [] : [{ x: c.step, y: c.wer }]), dots: true, axis: 'right' as const, format: (n: number) => `${n.toFixed(1)}%` },
   ] : [], [run])
 
   const ckSteps = run?.checkpoints.map((c) => c.step) ?? []
@@ -157,7 +163,7 @@ export function InspectPage() {
         name={name}
         slug={slug}
         run={run}
-        loadedStep={loadedStep}
+        loadedStep={loaded}
         onLoad={onLoad}
         popoverOpen={popoverOpen}
         setPopoverOpen={setPopoverOpen}
@@ -184,8 +190,8 @@ export function InspectPage() {
         )}
         {run && (
           <>
-            <LineChart title="loss" series={lossSeries} xMax={run.steps} checkpoints={ckSteps} loaded={loadedStep} onLoad={onLoad} />
-            <LineChart title="voice quality per checkpoint" series={qualitySeries} xMax={run.steps} checkpoints={ckSteps} loaded={loadedStep} onLoad={onLoad} />
+            <LineChart title="loss" series={lossSeries} xMax={run.steps} checkpoints={ckSteps} loaded={loaded} onLoad={onLoad} note={trained ? undefined : 'not trained yet'} />
+            <LineChart title="voice quality per checkpoint" series={qualitySeries} xMax={run.steps} checkpoints={ckSteps} loaded={loaded} onLoad={onLoad} note={trained ? undefined : 'not trained yet'} />
           </>
         )}
         <DistillQueue jobs={jobs.data} state={jobs.state} error={jobs.error} now={now} />

@@ -71,14 +71,15 @@ export type Health = {
 }
 
 // Inspect page (fine-tune review). Appended by the inspect workstream.
+// Metrics are absent until the checkpoint has actually been trained and evaluated.
 export type InspectCheckpoint = {
   step: number
   epoch: number
-  trainLoss: number
-  valLoss: number
-  speakerSim: number
-  wer: number
-  savedAt: string
+  trainLoss?: number
+  valLoss?: number
+  speakerSim?: number
+  wer?: number
+  savedAt?: string
   path?: string
 }
 
@@ -89,7 +90,7 @@ export type InspectRun = {
   engram: string
   baseModel: string
   gpu: string
-  status: 'running' | 'done'
+  status: 'pending' | 'running' | 'done'
   epochs: number
   steps: number
   currentStep: number
