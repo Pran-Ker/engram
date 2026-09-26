@@ -27,8 +27,24 @@ export function geminiAvailable(): boolean {
   return !!apiKey()
 }
 
-/** One request -> raw PCM s16le mono 24 kHz. */
+const RETRIES = 2
+
+/** One clause -> raw PCM s16le mono 24 kHz. The API sometimes answers with no audio (finishReason OTHER); retry those. */
 export async function geminiPcm(text: string): Promise<Buffer> {
+  let last: Error | null = null
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      return await geminiPcmOnce(text)
+    } catch (e) {
+      last = e as Error
+      if (!/no audio|HTTP 5\d\d|gemini tts 5\d\d|429/.test(last.message)) throw last
+      if (attempt < RETRIES) console.warn(`[tts] gemini retry ${attempt + 1}/${RETRIES} for "${text.slice(0, 40)}": ${last.message}`)
+    }
+  }
+  throw last!
+}
+
+async function geminiPcmOnce(text: string): Promise<Buffer> {
   const key = apiKey()
   if (!key) throw new Error('GEMINI_API_KEY missing')
   const body = {
