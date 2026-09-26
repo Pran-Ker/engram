@@ -18,43 +18,53 @@ Liquid's LFM2.5-1.2B on Ollama is the brain. LFM2.5-Audio-1.5B on Modal is the v
 
 One engram is one folder: engram.json, context/*.md, photos/, video/. Adding a person is adding a folder. Chinmay Hebbar and I built it today.
 
-## Technical architecture [1200]  (1190 chars)
+## Technical architecture [1200]  (1196 chars)
 
-Two processes. A Hono API on :4100 with one file per route, and a Vite + React 19 stage on :4173 that proxies /api to it.
+Engram is built from three parts: a brain, a voice, and a face.
 
-POST /chat streams SSE from LFM2.5-1.2B-Instruct on Ollama. It emits a sentence event the moment a boundary appears, so the client starts speech on sentence one while the model is still writing sentence three. First token lands in 330 to 540 ms.
+The brain is a small Liquid language model that runs on the laptop, not in the cloud. When you ask a question, it reads a folder of short notes about Prannay. If the question needs fresh facts, it runs a quick web search through Nimble and saves what it found as a new note. Then it starts writing an answer.
 
-POST /tts/stream returns chunked PCM16 at 24 kHz from LFM2.5-Audio-1.5B on Modal, three warm L4 containers. The server holds the first 0.4 to 1.6 s of audio before releasing and the client holds 0.7 s more, so a sentence plays gapless while Modal generates at 0.8x realtime. Provider chain: fine-tuned run, base voice, local say. Each fallback is logged.
+The voice is a second Liquid model running on rented cloud graphics cards through Modal. The brain does not finish the whole answer before speaking. The moment one sentence is done, it goes to the voice and starts playing while the brain writes the next one. Each side holds back about a second of sound before playing, so speech never stutters even though the voice runs a little slower than real time. If the custom voice is down, it drops to a standard voice, then the computer's built-in one, and records which it used.
 
-context.ts serves the cards and turns a Nimble search into new cards under section live. events.ts buffers and flushes to RawTree, table lh_engram_events, never blocking the caller. inspect.ts reads that table for run grading and flags.
+The face is a portrait and two short video loops, one idle and one talking, made from six photos by Black Forest Labs' image and video models.
 
-pipelines/video/build.ts: photos to FLUX 2 Pro portrait, Kontext cleanup, FLUX 3 Video i2v for idle.mp4 and talk.mp4. voice/: browser recorder, Modal fine-tune, serve.py. The contract for all of it is engram/docs/CONTRACTS.md.
+Every turn is saved to a RawTree table instead of kept in the model's memory, so the next session starts from the notes and the table, not a transcript.
 
-## Setup instructions [1200]  (1056 chars)
+## Setup instructions [1200]  (1197 chars)
 
-You need Node 22, Ollama, ffmpeg, uv and the modal CLI. Keys sit in ~/.local/secrets and never in the repo: NIMBLE_API_KEY, BFL_API_KEY, RAWTREE_API_KEY, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET. Source it before anything below.
+Install Node, Ollama, ffmpeg, uv and the Modal command line tool. The API keys live in a file at ~/.local/secrets, never in the project. Load that file first.
 
+1. Download the brain:
 ollama pull hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M
 
+2. Check that all four sponsor services respond:
 cd hackathon && npm install && npm run check
-Four green lines means all four sponsors answer.
+Four green lines means everything is connected.
 
+3. Start the app:
 cd engram && npm install && npm run dev
-API on :4100, stage on :4173. Open http://localhost:4173/e/prannay, press start, ask something.
+Open http://localhost:4173/e/prannay, press start, and ask a question out loud.
 
-Voice: cd voice && make deploy puts LFM2.5-Audio on Modal with three warm L4s, about $2.40 an hour. make tts-stop when you are done. Without Modal the stage falls back to the base voice and says so in the x-voice-provider header.
+4. Voice (optional). This puts the voice model on Modal's cloud:
+cd voice && make deploy
+It keeps three graphics cards ready, which costs about $2.40 an hour, so shut it down when finished:
+make tts-stop
+Without this step the app still works, it just uses a standard voice instead of Prannay's.
 
-Face: cd engram && npm run video:build -- prannay rebuilds the portrait and loops from engrams/prannay/photos, about a dollar of BFL credit per run.
+5. Face (optional). This rebuilds the portrait and video loops from the photos folder, for about a dollar of Black Forest Labs credit:
+cd engram && npm run video:build -- prannay
 
-Another person: add engram/engrams/<slug>/ with engram.json, context/*.md and photos/, run the video build, reload. docs/adding-an-engram.md walks through it.
+To add another person, create a folder for them with a settings file, a folder of notes, and a folder of photos. Run the face step and reload. The guide docs/adding-an-engram.md walks through it.
 
-## Lessons learned [1200]  (1172 chars)
+## Lessons learned [1200]  (1196 chars)
 
-Voice and face went two different ways. LFM2.5-Audio has no zero-shot cloning: the voice is a label in the system prompt, so a new voice means a full fine-tune of backbone, encoder and audio decoder with the vocoder frozen. FLUX needed no training, only four reference photos and a prompt. One is a dataset problem, the other is a data hygiene problem.
+The voice and the face turned out to be opposite problems.
 
-The dataset: 45 to 90 minutes of clean audio, 400 to 800 clips between 1 and 14 s, same mic and distance, 24 kHz, read exactly what is on screen. We built a browser recorder with follow-along word highlighting because the terminal recorder lost takes. Training is the cheap part, about an hour on an A100 for $2 to $3. Recording is the long pole.
+The voice model cannot learn a new voice from a short sample. To sound like Prannay it must be retrained on his recordings. The face model needed no training at all, only four good photos and a written description.
 
-The hygiene: references frontal, sharp, face over 600 px, no phone, no second person. FLUX.2 drifted the backdrop to grey on half the candidates, so a Kontext pass forces #0b0b0c. The first talk clip zoomed in 19% over six seconds; a locked-off tripod line in the prompt fixed it. Chrome shows limited-range luma 28 as rgb(11), so the loop floor maps to 14, not 11, to match the page. 39 runs, five review rounds, PSNR above 46 dB at the loop seam, scale drift under 3%.
+So the voice is a collecting problem. You need about an hour of clean recordings, cut into hundreds of short clips, same microphone, same distance, reading exactly what is on screen. Our first recording tool lost takes, so we built one in the browser that highlights each word as you read. Training is the cheap part, an hour and a few dollars of rented computing. Recording is what takes the time.
+
+The face is a quality problem. The photos have to be sharp, facing the camera, no phone in hand, nobody else in frame. Half the generated portraits drifted toward a grey background, so we added a second pass that forces the exact dark color of the page. The first talking video slowly zoomed in; telling the model the camera was on a locked tripod fixed it. The browser showed the video's black slightly lighter than the page's, so we matched them by hand. It took 39 attempts and five review rounds to get one we liked.
 
 ## Fixed fields
 
