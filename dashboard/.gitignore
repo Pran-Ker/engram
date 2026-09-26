@@ -3,6 +3,7 @@ data/*.csv
 data/raw/
 images/
 videos/
+videos/replies/
 __pycache__/
 .snapshots/
 .crawls/

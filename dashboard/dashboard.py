@@ -1,5 +1,5 @@
 """Localhost dashboard: name + social link (+ optional photos) → Nimble enrichment → FLUX 3 talking avatar → click to play."""
-import base64, binascii, contextlib, io, json, os, re, subprocess, sys, threading, time, unicodedata
+import base64, binascii, contextlib, hashlib, io, json, os, re, subprocess, sys, threading, time, unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -9,7 +9,10 @@ import animate, enrich, export_engram
 ROOT = Path(__file__).parent
 PEOPLE, IMAGES_CSV = ROOT / "data" / "people.csv", ROOT / "data" / "person_images.csv"
 JOBS = {}
-LOCK = threading.Lock()  # ponytail: one pipeline at a time so the CSVs never race; per-person locks if that ever matters
+LOCKS = {}  # one lock per person: different people's jobs run in parallel; CSV writes are row-merges under enrich.CSV_LOCK
+LOCKS_GUARD = threading.Lock()
+def person_lock(pid):
+    with LOCKS_GUARD: return LOCKS.setdefault(pid, threading.Lock())
 ESTIMATE = {"draft": "~$0.10 Nimble agent run + $0.90 FLUX 3 draft clip", "hd": "~$0.10 Nimble agent run + $2.55 FLUX 3 HD clip"}
 MAX_UPLOAD = 8 * 1024 * 1024
 # Engram's stage. Dev: Vite on :4173 (binds ::1, hence localhost). Deployed: the API serves web/dist, so the stage is the API URL.
@@ -46,7 +49,7 @@ def people():
     for r in enrich.read_csv(PEOPLE):  # empty on a fresh checkout: the grid just shows the form
         img = animate.headshot(r["person_id"]); job = JOBS.get(r["person_id"], {})
         out.append({k: r[k] for k in ("person_id", "full_name", "headline", "current_company", "bio_summary", "avatar_speech", "avatar_video", "enrichment_status")}
-                   | {"image": str(img.relative_to(ROOT)) if img else "", "job": job.get("stage", ""), "step": job.get("step", ""),
+                   | {"image": str(img.relative_to(ROOT)) if img else "", "job": job.get("stage", ""), "step": job.get("step", ""), "reason": job.get("reason", ""),
                       "speech_match": r.get("speech_match", ""), "speech_heard": r.get("speech_heard", "")})
     return out
 
@@ -95,26 +98,76 @@ def save_uploads(pid, images):
     return stored, skipped
 
 
+REPLIES = {}  # reply-clip render jobs by key; cached clips answer immediately
+
+
+def reply_job(pid, src, line, draft):
+    """Start (or reuse) a FLUX render of `line`; returns the job record: status rendering|done|failed, url when done."""
+    key = f"{pid}-{hashlib.sha1(line.encode()).hexdigest()[:10]}{'' if draft else '-hd'}"
+    out = ROOT / "videos" / "replies" / f"{key}.mp4"; seconds = animate.duration_for(line)
+    base = {"job": key, "text": line, "seconds": seconds, "words": len(line.split()), "estimate_usd": round(animate.RATE["draft" if draft else "hd"] * seconds, 2)}
+    if out.is_file(): return base | {"status": "done", "url": str(out.relative_to(ROOT)), "cached": True}
+    if key in REPLIES and REPLIES[key]["status"] == "rendering": return REPLIES[key]
+    REPLIES[key] = base | {"status": "rendering", "started": time.time()}
+    def run():  # no redirect_stdout here: it is process-wide and would leak into a concurrent pipeline job's log
+        try:
+            cost = animate.render_clip(animate.flux_ready(src), line, out, f"{pid}.reply", seconds, "hd", draft)
+            REPLIES[key] = base | ({"status": "done", "url": str(out.relative_to(ROOT)), "cached": False, "cost": cost} if cost is not None and out.is_file()
+                                   else {"status": "failed", "error": "FLUX could not render this reply (see data/raw/%s.reply.video_result.json)." % pid})
+        except Exception as e:
+            REPLIES[key] = base | {"status": "failed", "error": f"{type(e).__name__}: {e}"}
+    threading.Thread(target=run, daemon=True).start()
+    return REPLIES[key]
+
+
 class Log(io.TextIOBase):
     def __init__(self, job): self.job = job
     def write(self, s): self.job["log"] += s; return len(s)
+
+
+class ThreadPrints:
+    """sys.stdout replacement that routes each thread's prints to its own job log (redirect_stdout is process-wide)."""
+    def __init__(self, real): self.real, self.sinks = real, {}
+    def write(self, s):
+        sink = self.sinks.get(threading.get_ident())
+        return sink.write(s) if sink else self.real.write(s)
+    def flush(self): self.real.flush()
+sys.stdout = PRINTS = ThreadPrints(sys.stdout)
+
+@contextlib.contextmanager
+def redirect_prints(job):
+    PRINTS.sinks[threading.get_ident()] = Log(job)
+    try: yield
+    finally: PRINTS.sinks.pop(threading.get_ident(), None)
 
 
 def run_job(pid, step, draft):
     """step 'enrich': Nimble research → avatar card.  step 'animate': (enrich if needed, then) FLUX clip."""
     job = JOBS[pid]
     try:
-        with LOCK, contextlib.redirect_stdout(Log(job)):
+        with person_lock(pid), redirect_prints(job):
             rows = enrich.read_csv(PEOPLE); row = next(r for r in rows if r["person_id"] == pid)
             if row["enrichment_status"] != "complete":
                 job["stage"] = "enriching"; enrich.enrich(rows, {pid})
-            rows = animate.read_csv(PEOPLE); row = next(r for r in rows if r["person_id"] == pid)
+            row = next(r for r in enrich.read_csv(PEOPLE) if r["person_id"] == pid)
             if step == "animate" and not row["avatar_video"]:
-                job["stage"] = "animating"; animate.animate(row, "hd", draft); animate.write_csv(PEOPLE, rows)
+                job["stage"] = "animating"; animate.animate(row, "hd", draft); enrich.merge_rows(PEOPLE, [row])
             ok = row["avatar_video"] if step == "animate" else row["enrichment_status"] == "complete"
             job["stage"] = "done" if ok else "failed"
+            if not ok: job["reason"] = failure_reason(job["log"])
     except Exception as e:
-        job["stage"] = "failed"; job["log"] += f"\n{type(e).__name__}: {e}"
+        job["stage"] = "failed"; job["log"] += f"\n{type(e).__name__}: {e}"; job["reason"] = failure_reason(job["log"])
+
+
+def failure_reason(log):
+    """Whose fault, in the card's words: ours (fixable here) or the provider's (retry / better input)."""
+    if "moderated" in log.lower(): return "BFL moderated it"
+    if "server-side error" in log or '"Server side error"' in log: return "FLUX failed (BFL server error)"
+    if "no verified photo" in log: return "no photo yet"
+    if "out of credits" in log: return "out of credits"
+    if "rejected the API key" in log: return "API key rejected"
+    if "Nimble" in log and "agent returned nothing" in log: return "Nimble agent returned nothing"
+    return "failed"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -126,6 +179,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == "/": return self.send(200, (ROOT / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
+        if u.path.startswith("/talk/"): return self.send(200, (ROOT / "talk.html").read_bytes(), "text/html; charset=utf-8")  # our themed stage for a direct engram
+        if u.path == "/api/config": return self.send(200, {"engram_api": export_engram.ENGRAM_API, "engram_stage": ENGRAM_STAGE})
+        if u.path == "/api/reply-clip": return self.send(200, REPLIES.get(q.get("job", [""])[0], {"status": "unknown", "error": "No such render job (the server may have restarted)."}))
         if u.path == "/api/people": return self.send(200, people())
         if u.path == "/api/status":
             job = JOBS.get(q.get("id", [""])[0], {"stage": "none", "log": "", "started": time.time()})
@@ -134,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
             try: return self.send(200, requests.get(f"{animate.API}/credits", headers={"x-key": animate.H["x-key"]}, timeout=10).json())
             except Exception as e: return self.send(502, {"error": f"BFL unreachable: {e}"})
         if u.path.startswith(("/images/", "/videos/")):
-            f = (ROOT / u.path.lstrip("/")).resolve()
+            f = (ROOT / u.path.lstrip("/")).resolve()  # includes videos/replies/*
             if not f.is_relative_to(ROOT) or not f.is_file(): return self.send(404, {"error": "not found"})
             ctype = "video/mp4" if f.suffix == ".mp4" else "image/" + f.suffix.lstrip(".").replace("jpg", "jpeg")
             return self.send(200, f.read_bytes(), ctype)
@@ -145,12 +201,21 @@ class Handler(BaseHTTPRequestHandler):
             pid = self.path.rsplit("/", 1)[-1]
             if not any(r["person_id"] == pid for r in enrich.read_csv(PEOPLE)): return self.send(404, {"error": "Unknown person."})
             try:
-                with LOCK: j = export_engram.export(pid)
-                return self.send(200, j | {"stage": f"{ENGRAM_STAGE}{j['url']}"})
+                j = export_engram.export(pid)  # read-only here (CSV writes are atomic), so it must not wait on the pipeline lock
+                return self.send(200, j | {"stage": f"{ENGRAM_STAGE}{j['url']}", "talk": f"/talk/{pid}"})
             except requests.ConnectionError: return self.send(502, {"error": f"Engram API is not running at {export_engram.ENGRAM_API} — start it with `npm run dev` in repos/engram/engram."})
             except Exception as e: return self.send(502, {"error": f"Engram: {e}"})
+        if self.path.startswith("/api/reply-clip/"):  # FLUX 3 speaks a reply written by the (Liquid) brain; a background job the page polls
+            pid = self.path.rsplit("/", 1)[-1]
+            try: body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            except ValueError: return self.send(400, {"error": "Malformed request."})
+            line = animate.fit(str(body.get("text") or "").strip()).replace('"', "'")
+            if not line: return self.send(400, {"error": "Nothing to say."})
+            src = animate.headshot(pid)
+            if not src: return self.send(404, {"error": "No verified photo for this person."})
+            return self.send(200, reply_job(pid, src, line, not body.get("hd")))
         if self.path == "/api/verify":  # dev mode: Whisper QA over all clips, local and free; runs verify_clips.py
-            with LOCK:
+            with enrich.CSV_LOCK:  # it rewrites people.csv itself, so keep row-merges out while it runs
                 p = subprocess.run(["uv", "run", "--python", "3.12", "--with", "faster-whisper", "python", str(ROOT / "verify_clips.py")],
                                    capture_output=True, text=True, cwd=ROOT, timeout=1800)
             out = "\n".join(l for l in (p.stdout + p.stderr).splitlines() if "HF_TOKEN" not in l)

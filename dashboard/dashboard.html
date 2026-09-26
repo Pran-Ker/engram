@@ -155,10 +155,10 @@ function card(p) {
   const busy = ACTIVE.includes(p.job), el = document.createElement('div');
   el.className = 'card' + (p.avatar_video && !busy ? ' play' : '');
   const initials = (p.full_name || p.person_id).split(/[\s-]+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const status = busy ? `<span class="pill busy">${p.job}…</span>` : p.job === 'failed' ? '<span class="pill bad">failed</span>'
+  const status = busy ? `<span class="pill busy">${p.job}…</span>` : p.job === 'failed' ? `<span class="pill bad" title="Details in Dev mode → pipeline log">${esc(p.reason || 'failed')}</span>`
                : p.avatar_video ? '<span class="pill ok">▶ click to play</span>'
                : p.enrichment_status === 'complete' ? '<span class="pill">avatar created</span>' : `<span class="pill">${esc(p.enrichment_status || 'pending')}</span>`;
-  const action = busy ? '' : p.avatar_video ? `<button class="act ghost" data-engram title="Create or refresh this person's Engram and open the stage">Talk to me</button>`
+  const action = busy ? '' : p.avatar_video ? `<button class="act ghost" data-engram title="Build this person's direct engram and open a conversation">Talk to me</button>`
                : !p.image ? `<button class="act ghost" data-photo>Add a photo</button>`
                : p.enrichment_status === 'complete' ? `<button class="act ${armed === p.person_id ? 'confirm' : ''}">${armed === p.person_id ? `Confirm · ~$${$('hd').checked ? '2.55' : '0.90'}` : 'Bring to life'}</button>` : '';
   const veil = busy ? '<div class="veil"><span class="spin"></span></div>' : '';
@@ -181,8 +181,8 @@ async function talkTo(p, button) {  // POST the row + photo + clip into Engram's
     const r = await fetch('/api/engram/' + encodeURIComponent(p.person_id), { method: 'POST' });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || `Engram failed (${r.status}).`);
-    button.textContent = 'Open stage ↗'; button.disabled = false; button.onclick = () => window.open(j.stage, '_blank');
-    window.open(j.stage, '_blank');
+    button.textContent = 'Talk to me ↗'; button.disabled = false; button.onclick = () => window.open(j.talk, '_blank');
+    window.open(j.talk, '_blank');  // our themed talk page; it links to the Engram stage too
   } catch (e) { $('err').textContent = e.message; $('err').hidden = false; button.disabled = false; button.textContent = 'Talk to me'; }
 }
 

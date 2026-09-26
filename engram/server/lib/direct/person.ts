@@ -127,7 +127,8 @@ function clearOwnedCards(dir: string) {
 
 function persona(p: Person) {
   const role = [p.headline, p.company && `at ${p.company}`].filter(Boolean).join(' ')
-  return `You are ${p.name}${role ? `, ${role}` : ''}, speaking out loud to someone standing in front of you. Answer in first person, in one to three short spoken sentences. Warm, direct, specific, no corporate voice, no lists, no markdown. Your notes were gathered from your public profiles and your company's site; treat them as your own memory. Stick to what they say, and if they do not cover something, say so plainly and move on.`
+  // Kept under ~30 words: direct-mode replies can be rendered as a spoken FLUX 3 clip, which fails on longer lines.
+  return `You are ${p.name}${role ? `, ${role}` : ''}, speaking out loud to someone standing in front of you. Answer in first person in one or two short spoken sentences, thirty words at most in total. Warm, direct, specific, no corporate voice, no lists, no markdown. Your notes were gathered from your public profiles and your company's site; treat them as your own memory. Stick to what they say, and if they do not cover something, say so plainly in one sentence.`
 }
 
 const bullets = (rows: [string, string][]) => rows.filter(([, v]) => v).map(([k, v]) => `- ${k}: ${v}`).join('\n')

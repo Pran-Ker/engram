@@ -125,10 +125,22 @@ click events and the dashboard to hosted services.
 
 Cards with a clip carry a **Talk to me** button. It calls `POST /api/engram/<person_id>` here, which runs
 `export_engram.py`: the person's row, posts, FLUX-ready headshot and clip are posted to Engram's
-`POST /api/direct/engrams` (team repo `Pran-Ker/engram`, branch `direct-avatar-mode`), and the stage
-URL opens in a new tab — a face that answers questions about the person and their company from the same
-research, via Liquid LFM2.5 on OpenRouter. Engram must be running (`npm run dev` in `repos/engram/engram`
-with `OPENROUTER_API_KEY` set). Idempotent: re-clicking refreshes.
+`POST /api/direct/engrams`, then **`/talk/<person_id>`** opens — a conversation page in this dashboard's own
+theme (`talk.html`). The avatar is the card-sized headshot; while an answer is spoken the muted "bring to
+life" clip plays so the mouth moves, idle shows the photo with a slow breathe. Answers stream from Engram's
+direct-mode `/chat` (Liquid LFM2.5 on OpenRouter). Voice: Engram's Liquid-Audio `/tts` when a voice service
+is deployed, otherwise the browser's speech synthesis — direct engrams need no voice fine-tune. A mic button
+appears where the browser supports speech recognition. The page also links to the original Engram stage.
+
+**Spoken video replies** (default on the talk page): the brain's text goes to `POST /api/reply-clip/<person_id>`,
+which asks FLUX 3 to render the avatar saying it (`animate.render_clip`, draft, 5–20 s sized to the words,
+~$0.60–1.00, 1–2 min); the clip plays with its own voice over the card. Cached per person + text under
+`videos/replies/`. Untick the box for the instant voice (Engram's Liquid Audio if deployed, else the browser).
+Direct-mode answers are kept to ≤30 words so FLUX can voice them.
+
+Engram must be running (`npm run dev` in `../engram` with `OPENROUTER_API_KEY` set). **Talk to me** re-exports
+only when the person's row, photo or clip changed since the last export (`data/raw/engram-exports.json`), so
+re-opening a conversation is instant; it never waits on the pipeline lock.
 
 Nothing is tied to localhost. Addresses come from the environment (or `.env`):
 
