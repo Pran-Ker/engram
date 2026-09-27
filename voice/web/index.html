@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Voice Recorder</title>
+<title>Voice Studio · record</title>
 <meta name="viewport" content="width=device-width">
 <link rel="icon" href="data:,">
 <style>
@@ -35,6 +35,10 @@ b{font-weight:600}
 #rec{width:10px;height:10px;border-radius:50%;background:var(--faint);transition:background 80ms}
 #rec.arm{background:var(--warn)}
 #rec.on{background:var(--bad);box-shadow:0 0 8px var(--bad);animation:blink 1s steps(2,end) infinite}
+#train{margin-left:8px;text-decoration:none;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:0 9px;line-height:20px;font-size:12px;white-space:nowrap}
+#train:hover{color:var(--fg);border-color:var(--dim)}
+#train.ready{color:#141414;background:var(--acc);border-color:var(--acc);font-weight:600}
+#train[hidden]{display:none}
 @keyframes blink{50%{opacity:.55}}
 
 #banner{display:flex;align-items:center;gap:14px;padding:5px 12px;background:#2b1712;border-bottom:1px solid #5a2c21;font-size:12px}
@@ -121,6 +125,7 @@ body.micerr #stage,body.micerr #feedback{display:none}
   <span id="rate" hidden></span>
   <div id="meter" title="input peak"><div id="meterFill"></div></div>
   <span id="rec" title="rec"></span>
+  <a id="train" href="train" hidden>Train</a>
 </header>
 <div id="banner" hidden><span id="bannerText"></span><button id="bannerBtn" class="btn">Retry</button></div>
 <main>
@@ -178,6 +183,8 @@ body.micerr #stage,body.micerr #feedback{display:none}
 const $ = s => document.querySelector(s);
 const RATE = 48000, PREROLL_S = 0.3, MIN_S = 1, MAX_S = 14, HARD_CAP_S = 30, QUIET_PEAK = 0.05, CLIP_PEAK = 0.99;
 const WAVE_SECS = 15;
+const API = location.pathname.replace(/\/(index\.html)?$/, '') + '/api';
+let TARGET_MIN = 45, MIN_MIN = 0, STUDIO = false;
 const pad4 = i => String(i).padStart(4, '0');
 const norm = w => w.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, '');
 
@@ -198,7 +205,7 @@ const el = {
   banner: $('#banner'), bannerText: $('#bannerText'), bannerBtn: $('#bannerBtn'),
   chips: $('#chips'), list: $('#list'), sentence: $('#sentence'),
   wave: $('#wave'), stats: $('#stats'), verdict: $('#verdict'),
-  micError: $('#micError'), micErrorWhat: $('#micErrorWhat'), micRetry: $('#micRetry'), help: $('#help'),
+  micError: $('#micError'), micErrorWhat: $('#micErrorWhat'), micRetry: $('#micRetry'), help: $('#help'), train: $('#train'),
 };
 let rows = [], spans = [], sentenceIdx = -1, bannerAction = null;
 const wavCache = new Map();
@@ -211,7 +218,7 @@ function visible() { const v = []; for (let i = 0; i < S.prompts.length; i++) if
 
 async function loadState() {
   try {
-    const r = await fetch('/api/state', { cache: 'no-store' });
+    const r = await fetch(API + '/state', { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     S.prompts = d.prompts || [];
@@ -221,6 +228,9 @@ async function loadState() {
     S.totalSeconds = d.total_seconds || 0;
     S.count = d.count ?? Object.keys(S.takes).length;
     S.loaded = true;
+    STUDIO = !!d.studio;
+    if (d.target_minutes) TARGET_MIN = d.target_minutes;
+    if (d.min_minutes) MIN_MIN = d.min_minutes;
     hideBanner();
     const h = parseHash();
     S.filter = h.f || 'todo';
@@ -303,7 +313,7 @@ async function postTake(idx, t, prev) {
   let r;
   try {
     const q = '?asr=' + encodeURIComponent(t.asr == null ? '' : t.asr) + '&mismatch=' + t.mismatch;
-    r = await fetch('/api/take/' + idx + q, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: t.wav });
+    r = await fetch(API + '/take/' + idx + q, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: t.wav });
   } catch (e) {
     if (!current()) return;
     revertTake(idx, t, prev);
@@ -338,7 +348,7 @@ async function commitSkip(idx, value) {
   if (value) S.skipped.add(idx); else S.skipped.delete(idx);
   renderList(); renderTop();
   try {
-    const r = await fetch('/api/skip/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skipped: value }) });
+    const r = await fetch(API + '/skip/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skipped: value }) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     if (Array.isArray(d)) S.skipped = new Set(d); else if (Array.isArray(d.skipped)) S.skipped = new Set(d.skipped);
@@ -673,7 +683,7 @@ function play() {
 }
 function fetchKept(idx) {
   if (wavCache.has(idx)) return Promise.resolve(wavCache.get(idx));
-  const p = fetch('/api/take/' + idx + '.wav', { cache: 'no-store' })
+  const p = fetch(API + '/take/' + idx + '.wav', { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
     .then(ab => playCtx().decodeAudioData(ab))
     .then(b => { b._idx = idx; wavCache.set(idx, b); while (wavCache.size > 24) wavCache.delete(wavCache.keys().next().value); return b; })
@@ -800,7 +810,14 @@ function renderTop() {
   el.count.textContent = S.count + ' / ' + S.prompts.length;
   const m = S.totalSeconds / 60;
   el.mins.textContent = m.toFixed(1) + ' min';
-  el.mins.classList.toggle('hit', m >= 45);
+  el.mins.classList.toggle('hit', m >= TARGET_MIN);
+  el.train.hidden = !STUDIO;
+  if (STUDIO) {
+    const ok = m >= MIN_MIN;
+    el.train.className = ok ? 'ready' : '';
+    el.train.textContent = ok ? 'Train this voice →' : 'Train · ' + m.toFixed(1) + ' / ' + MIN_MIN + ' min';
+    el.train.title = ok ? 'enough audio: fine-tune the model on it' : 'unlocks at ' + MIN_MIN + ' min of kept audio';
+  }
   el.mic.textContent = A.ready ? A.micName : (A.micName || 'mic —');
   el.mic.title = A.micName;
   if (A.ready && A.rate !== RATE) {
@@ -887,7 +904,7 @@ function renderFeedback() {
     return;
   }
   el.stats.textContent = S.skipped.has(S.cur) ? 'skipped · S unskip' : '';
-  if (S.count === 0 && S.mem.size === 0) { setVerdict('Space to record. Read exactly what is shown; a natural pace; stop when you reach 45 min.', 'blank'); return; }
+  if (S.count === 0 && S.mem.size === 0) { setVerdict('Space to record. Read exactly what is shown; a natural pace; stop when you reach ' + TARGET_MIN + ' min.', 'blank'); return; }
   setVerdict(S.mode === 'armed' ? 'recording in 0.8 s — Space cancels' : 'Space to record', '');
 }
 

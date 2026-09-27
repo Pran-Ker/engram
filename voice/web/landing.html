@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Voice Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#0e0e10;--panel:#141417;--line:#232328;--fg:#ececef;--dim:#8c8c95;--faint:#4b4b53;--acc:#ff6a3d;--ok:#3ddc84;--warn:#ffc233;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
+body{min-height:100vh;display:flex;flex-direction:column}
+main{max-width:640px;margin:0 auto;padding:72px 20px 40px;flex:1;width:100%}
+h1{font-size:34px;font-weight:600;letter-spacing:-0.02em;line-height:1.15}
+h1 span{color:var(--acc)}
+.lede{color:var(--dim);margin:14px 0 30px;font-size:17px}
+ol{counter-reset:s;list-style:none;display:grid;gap:12px;margin:0 0 34px}
+ol li{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:baseline}
+ol li::before{counter-increment:s;content:counter(s);font:600 12px var(--mono);color:var(--acc);border:1px solid var(--line);border-radius:3px;width:22px;height:22px;display:inline-grid;place-items:center}
+ol b{font-weight:600}
+ol .d{color:var(--dim);font-size:14px}
+.btn{display:inline-flex;align-items:center;gap:10px;background:var(--acc);color:#141414;border:0;border-radius:4px;padding:11px 18px;font:600 15px var(--sans);cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.6;cursor:default}
+.btn kbd{font:600 11px var(--mono);background:rgba(0,0,0,.18);border-radius:3px;padding:1px 5px}
+.note{margin-top:14px;color:var(--faint);font-size:13px}
+.note code{font-family:var(--mono);color:var(--dim)}
+#gate{margin-top:26px;padding:12px 14px;border:1px solid #4a3d18;background:#1c170c;border-radius:4px;color:var(--warn);font-size:14px}
+#gate[hidden]{display:none}
+#err{color:#ff4d4f;margin-top:10px;font-size:13px}
+footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:14px 20px;display:flex;gap:18px;flex-wrap:wrap;justify-content:center}
+footer a{color:var(--dim);text-decoration:none}
+footer a:hover{color:var(--fg)}
+@media (max-width:520px){main{padding-top:44px}h1{font-size:28px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Train a model on <span>your voice</span>.<br>From the browser.</h1>
+  <p class="lede">Read sentences into your mic. A 1.5B audio model is fine-tuned on them. Then type anything and hear it back in your voice.</p>
+  <ol>
+    <li><div><b>Record.</b> <span class="d">Sentences appear one at a time. Space records, the words light up as you say them, Enter keeps the take. Ten minutes unlocks training; thirty sounds like you.</span></div></li>
+    <li><div><b>Train.</b> <span class="d">One button. Liquid's <code>LFM2.5-Audio-1.5B</code> is fine-tuned on an A100, about ten to twenty minutes.</span></div></li>
+    <li><div><b>Listen.</b> <span class="d">Four samples land on the page. Type a sentence, hear it in your voice.</span></div></li>
+  </ol>
+  <button class="btn" id="start">Start a new voice <kbd>Enter</kbd></button>
+  <div id="err"></div>
+  <p class="note">You get a link like <code>/v/8f3a19c2/</code>. That link is the voice. Bookmark it to come back; anyone who has it can add to it or hear it. Use Chrome or Edge for the word-by-word highlighting. Nothing else is stored about you.</p>
+  <div id="gate" hidden></div>
+</main>
+<footer>
+  <a id="repo" href="#" target="_blank" rel="noopener">source and self-host</a>
+  <span>runs on Modal · model by Liquid AI</span>
+</footer>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+async function info() {
+  try {
+    const d = await (await fetch('/api/info', { cache: 'no-store' })).json();
+    if (d.repo) $('#repo').href = d.repo;
+    if (d.gated) {
+      $('#gate').hidden = false;
+      $('#gate').textContent = 'Recording is open to everyone. Training runs on my GPU credits, so it asks for an invite code' + (d.contact ? ': ask ' + d.contact + ' for one' : '') + '. Or deploy your own copy from the source link below and skip the code.';
+    }
+  } catch (e) { /* the page still works without it */ }
+}
+async function start() {
+  const b = $('#start'); b.disabled = true; $('#err').textContent = '';
+  try {
+    const r = await fetch('/api/new', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    location.href = d.url;
+  } catch (e) { $('#err').textContent = 'Could not start: ' + (e.message || e); b.disabled = false; }
+}
+$('#start').addEventListener('click', start);
+window.addEventListener('keydown', e => { if (e.key === 'Enter' && !$('#start').disabled) start(); });
+info();
+</script>
+</body>
+</html>

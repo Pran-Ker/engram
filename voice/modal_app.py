@@ -43,6 +43,7 @@ image = (
     .apt_install("ffmpeg", "libsndfile1", "git")
     .pip_install("liquid-audio==1.3.0", "soundfile>=0.13", "hf_transfer")
     .env({"HF_HOME": "/hf", "HF_HUB_ENABLE_HF_TRANSFER": "1", "TOKENIZERS_PARALLELISM": "false"})
+    .add_local_python_source("modal_app", "prepare")  # so studio.py can include these functions in its own app
 )
 
 data_vol = modal.Volume.from_name("voice-data", create_if_missing=True)

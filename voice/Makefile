@@ -6,8 +6,16 @@ RUN     ?= prannay-v1
 EPOCHS  ?= 8
 TEXT    ?= Hey, this is Prannay. I'm testing whether the fine-tuned model actually sounds like me.
 
+# The shell that runs `make studio` decides which Modal workspace and settings the studio gets:
+#   MODAL_TOKEN_ID/SECRET or the active `modal profile`; VOICE_STUDIO_CODES, VOICE_STUDIO_ADMIN, VOICE_STUDIO_CONTACT (see studio.py)
 .DEFAULT_GOAL := help
 help:
+	@echo "--- Voice Studio (hosted: record + train + listen in the browser) ---"
+	@echo "make studio       deploy studio.py to Modal and print its URL"
+	@echo "make studio-dev   run studio.py with live reload (modal serve)"
+	@echo "make studio-url   print the deployed studio URL"
+	@echo "make studio-status list voices on the volumes and their training state"
+	@echo "--- CLI pipeline (record locally, train from the terminal) ---"
 	@echo "make setup        install local deps (uv)"
 	@echo "make devices      list microphones"
 	@echo "make record       guided sentence recording  (resumable)"
@@ -78,6 +86,21 @@ clean-smoke:
 	rm -rf data/smoke samples/smoke
 
 .PHONY: clean-smoke
+
+studio:
+	uv run modal deploy studio.py
+	uv run python studio.py url
+
+studio-dev:
+	uv run modal serve studio.py
+
+studio-url:
+	uv run python studio.py url
+
+studio-status:
+	uv run python studio.py status
+
+.PHONY: studio studio-dev studio-url studio-status
 
 deploy:
 	uv run modal deploy serve.py
