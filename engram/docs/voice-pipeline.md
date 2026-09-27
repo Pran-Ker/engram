@@ -4,7 +4,7 @@ Engram speaks with a copy of Liquid's `LFM2.5-Audio-1.5B` fine-tuned on one pers
 
 The training and serving code lives in `../voice`. The Engram side is `server/routes/tts.ts` with `server/lib/tts-modal.ts` and `server/lib/tts-local.ts`, and the playback queue in `web/src/lib/audio.ts`.
 
-Since September 26, 2026 the same recorder and pipeline are also hosted as [Voice Studio](../../voice/README.md) (`../voice/studio.py`): anyone with the link records in the browser, presses Train, and gets a `/ckpt/<slug>/final` model plus a "say anything" box, no laptop steps. The rest of this page describes the laptop-plus-CLI path the stage uses.
+Since September 26, 2026 the recorder is also hosted as [Voice Studio](../../voice/README.md) on Railway: anyone with the link records in the browser, downloads the cleaned dataset, and fine-tunes with `voice/finetune.py` on their own GPU. The rest of this page describes the laptop-plus-Modal path the stage uses.
 
 As of September 25, 2026 there are no recordings yet: `../voice/data/raw` is empty, the `prannay-v1` run does not exist on Modal, and the service answers in the base voice (`x-voice-provider: modal:base`). Everything after the recording step is built and tested with `make smoke`. The path that unblocks the real voice is `make record` (or `make web`), `make prepare`, `make upload`, `make all`; the service picks the run up without a redeploy.
 

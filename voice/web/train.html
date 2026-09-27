@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Voice Studio · train</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#0e0e10;--panel:#141417;--line:#232328;--fg:#ececef;--dim:#8c8c95;--faint:#4b4b53;--acc:#ff6a3d;--ok:#3ddc84;--warn:#ffc233;--bad:#ff4d4f;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--sans)}
+header{height:40px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px}
+header a{color:var(--dim);text-decoration:none}
+header a:hover{color:var(--fg)}
+header .slug{font-family:var(--mono);color:var(--fg)}
+header .sep{color:var(--faint)}
+main{max-width:720px;margin:0 auto;padding:28px 16px 60px;display:grid;gap:22px}
+section{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:16px 18px}
+h2{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.big{font:600 28px/1.1 var(--sans);letter-spacing:-0.02em}
+.big small{font:13px var(--mono);color:var(--dim);margin-left:6px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:12px 0 6px}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .3s}
+.bar.ok i{background:var(--ok)}
+.hint{color:var(--dim);font-size:13px}
+.hint b{color:var(--fg);font-weight:600}
+label{display:grid;gap:4px;font-size:12px;color:var(--dim)}
+input{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px 10px;outline:none;min-width:0}
+input:focus{border-color:var(--dim)}
+.btn{display:inline-block;background:var(--acc);color:#141414;border:0;border-radius:4px;padding:9px 16px;font:600 14px var(--sans);cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn:hover{filter:brightness(1.08)}
+.btn.off{opacity:.45;pointer-events:none}
+.steps{counter-reset:s;list-style:none;display:grid;gap:16px}
+.steps li{display:grid;grid-template-columns:26px 1fr;gap:12px}
+.steps li::before{counter-increment:s;content:counter(s);font:600 12px var(--mono);color:var(--acc);border:1px solid var(--line);border-radius:3px;width:22px;height:22px;display:inline-grid;place-items:center;margin-top:2px}
+.steps b{font-weight:600}
+.steps p{color:var(--dim);font-size:13px;margin:2px 0 6px}
+pre{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:10px 12px;font:12.5px/1.55 var(--mono);color:var(--fg);overflow-x:auto;white-space:pre}
+pre .c{color:var(--faint)}
+pre button{position:absolute;top:6px;right:6px;font:11px var(--mono);color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:2px 7px;cursor:pointer}
+pre button:hover{color:var(--fg)}
+.grid2{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+footer{text-align:center;color:var(--faint);font-size:12px;padding:0 16px 30px}
+footer code{font-family:var(--mono);color:var(--dim)}
+@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <a href="./">← Recorder</a>
+  <span class="sep">·</span>
+  <span>voice <span class="slug" id="slug">—</span></span>
+</header>
+<main>
+  <section>
+    <h2>Recordings</h2>
+    <div class="row"><span class="big" id="mins">0.0<small>min</small></span><span class="hint" id="clips"></span></div>
+    <div class="bar" id="bar"><i style="width:0%"></i></div>
+    <div class="hint" id="audioHint"></div>
+  </section>
+
+  <section>
+    <h2>Download</h2>
+    <div class="grid2">
+      <label>The name the model will answer to <input id="fname" placeholder="e.g. Prannay" maxlength="40"></label>
+      <a class="btn off" id="dl" href="../dataset.zip" download>Download dataset</a>
+    </div>
+    <p class="hint" style="margin-top:10px">One zip: your clips trimmed, loudness-normalized and resampled to 24 kHz, a <code>manifest.jsonl</code> with the text of each clip, and <code>finetune.py</code>. Preparing takes up to a minute for thirty minutes of audio. The name goes into the prompt <b id="promptPreview">Perform TTS. Use …'s voice.</b>, which is what the fine-tune teaches the model to honor.</p>
+  </section>
+
+  <section>
+    <h2>Train on your own GPU</h2>
+    <ol class="steps">
+      <li><div><b>Get a CUDA machine.</b><p>A full fine-tune of the 1.5B model wants about 40 GB of GPU memory at batch 16. An A100-80GB or H100 on any cloud is comfortable; a 24 GB card works with <code>--batch 4</code>. Ten minutes of audio is roughly ten minutes on an A100.</p></div></li>
+      <li><div><b>Install and fetch the script.</b><p>Python 3.12. The script and the zip are all you need.</p>
+        <pre><button data-copy>copy</button><span id="c1">pip install "liquid-audio==1.3.0" soundfile
+curl -O ORIGIN/finetune.py</span></pre></div></li>
+      <li><div><b>Unzip and train.</b><p>Tokenizes your clips into Mimi audio tokens, fine-tunes with Liquid's Trainer for about 300 optimizer steps, then renders four sample sentences into <code>ckpt/NAME/samples/</code>.</p>
+        <pre><button data-copy>copy</button><span id="c2">unzip voice-SLUG.zip
+python finetune.py train --data voice-SLUG --name "NAME"</span></pre></div></li>
+      <li><div><b>Say anything.</b><p>Renders a 24 kHz wav in your voice. Keep <code>training_args.json</code> next to <code>final/</code> so the prompt is remembered.</p>
+        <pre><button data-copy>copy</button><span id="c3">python finetune.py say --ckpt "ckpt/NAME/final" --text "Hey, this is NAME. It worked."</span></pre></div></li>
+    </ol>
+    <p class="hint" style="margin-top:14px">Sounds off? Record more (the recorder link keeps working; re-download), or add <code>--epochs 20</code>. Under ten minutes of audio the voice is recognisable but rough.</p>
+  </section>
+</main>
+<footer>This link is the voice. Keep it to come back. <a id="repo" href="#" target="_blank" rel="noopener" style="color:var(--dim)">Source</a> · model <code>LiquidAI/LFM2.5-Audio-1.5B</code></footer>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const BASE = location.pathname.replace(/\/train\/?$/, '');
+const API = BASE + '/api';
+const slug = BASE.split('/').pop();
+$('#slug').textContent = slug;
+$('#dl').href = BASE + '/dataset.zip';
+let D = null;
+try { $('#fname').value = localStorage.getItem('voice-name:' + slug) || ''; } catch (e) {}
+
+function name() { return $('#fname').value.trim(); }
+function fill() {
+  const n = name() || 'NAME', origin = location.origin;
+  $('#promptPreview').textContent = "Perform TTS. Use " + (name() || '…') + "'s voice.";
+  $('#c1').textContent = 'pip install "liquid-audio==1.3.0" soundfile\ncurl -O ' + origin + '/finetune.py';
+  $('#c2').textContent = 'unzip voice-' + slug + '.zip\npython finetune.py train --data voice-' + slug + ' --name "' + n + '"';
+  $('#c3').textContent = 'python finetune.py say --ckpt "ckpt/' + n + '/final" --text "Hey, this is ' + n + '. It worked."';
+}
+async function load() {
+  try {
+    const r = await fetch(API + '/job', { cache: 'no-store' });
+    D = await r.json();
+    if (!r.ok) throw new Error(D.error || ('HTTP ' + r.status));
+  } catch (e) { $('#audioHint').textContent = 'Server unreachable: ' + (e.message || e); return; }
+  render();
+}
+function render() {
+  const d = D;
+  if (d.repo) $('#repo').href = d.repo;
+  const pct = Math.min(100, d.minutes / d.min_minutes * 100);
+  $('#mins').innerHTML = d.minutes.toFixed(1) + '<small>min</small>';
+  $('#clips').textContent = d.count + ' kept take' + (d.count === 1 ? '' : 's');
+  $('#bar').className = 'bar' + (d.minutes >= d.min_minutes ? ' ok' : '');
+  $('#bar i').style.width = pct.toFixed(1) + '%';
+  const need = d.min_minutes - d.minutes;
+  $('#audioHint').innerHTML = need > 0
+    ? 'Record <b>' + need.toFixed(1) + ' more minutes</b> before training is worth it. ' + d.target_minutes + ' minutes is the comfortable target. You can still download what you have.'
+    : d.minutes < d.target_minutes ? 'Enough to train. More audio, up to about ' + d.target_minutes + ' minutes, sounds noticeably closer.' : 'Plenty. Download and train.';
+  $('#dl').classList.toggle('off', d.count === 0);
+}
+$('#fname').addEventListener('input', () => { fill(); try { localStorage.setItem('voice-name:' + slug, name()); } catch (e) {} });
+document.querySelectorAll('pre button[data-copy]').forEach(b => b.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(b.parentElement.querySelector('span').textContent); b.textContent = 'copied'; setTimeout(() => b.textContent = 'copy', 1200); } catch (e) { b.textContent = 'select it'; }
+}));
+fill(); load();
+</script>
+</body>
+</html>

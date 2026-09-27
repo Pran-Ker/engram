@@ -23,14 +23,13 @@ ol li{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:baseline}
 ol li::before{counter-increment:s;content:counter(s);font:600 12px var(--mono);color:var(--acc);border:1px solid var(--line);border-radius:3px;width:22px;height:22px;display:inline-grid;place-items:center}
 ol b{font-weight:600}
 ol .d{color:var(--dim);font-size:14px}
+code{font-family:var(--mono);font-size:.93em}
 .btn{display:inline-flex;align-items:center;gap:10px;background:var(--acc);color:#141414;border:0;border-radius:4px;padding:11px 18px;font:600 15px var(--sans);cursor:pointer}
 .btn:hover{filter:brightness(1.08)}
 .btn:disabled{opacity:.6;cursor:default}
 .btn kbd{font:600 11px var(--mono);background:rgba(0,0,0,.18);border-radius:3px;padding:1px 5px}
 .note{margin-top:14px;color:var(--faint);font-size:13px}
-.note code{font-family:var(--mono);color:var(--dim)}
-#gate{margin-top:26px;padding:12px 14px;border:1px solid #4a3d18;background:#1c170c;border-radius:4px;color:var(--warn);font-size:14px}
-#gate[hidden]{display:none}
+.note code{color:var(--dim)}
 #err{color:#ff4d4f;margin-top:10px;font-size:13px}
 footer{border-top:1px solid var(--line);color:var(--faint);font-size:12px;padding:14px 20px;display:flex;gap:18px;flex-wrap:wrap;justify-content:center}
 footer a{color:var(--dim);text-decoration:none}
@@ -40,35 +39,25 @@ footer a:hover{color:var(--fg)}
 </head>
 <body>
 <main>
-  <h1>Train a model on <span>your voice</span>.<br>From the browser.</h1>
-  <p class="lede">Read sentences into your mic. A 1.5B audio model is fine-tuned on them. Then type anything and hear it back in your voice.</p>
+  <h1>Record a dataset of <span>your voice</span>.<br>Then fine-tune a model on it.</h1>
+  <p class="lede">Read sentences into your mic here. Download the cleaned clips. Run one script on a GPU and Liquid's 1.5B audio model learns to speak as you.</p>
   <ol>
-    <li><div><b>Record.</b> <span class="d">Sentences appear one at a time. Space records, the words light up as you say them, Enter keeps the take. Ten minutes unlocks training; thirty sounds like you.</span></div></li>
-    <li><div><b>Train.</b> <span class="d">One button. Liquid's <code>LFM2.5-Audio-1.5B</code> is fine-tuned on an A100, about ten to twenty minutes.</span></div></li>
-    <li><div><b>Listen.</b> <span class="d">Four samples land on the page. Type a sentence, hear it in your voice.</span></div></li>
+    <li><div><b>Record.</b> <span class="d">Sentences appear one at a time. Space records, the words light up as you say them, Enter keeps the take. Ten minutes is the practical minimum; thirty sounds like you.</span></div></li>
+    <li><div><b>Download.</b> <span class="d">One zip: your clips trimmed, loudness-normalized and resampled to 24 kHz, a manifest, and <code>finetune.py</code>.</span></div></li>
+    <li><div><b>Train.</b> <span class="d">On any CUDA machine: <code>python finetune.py train --data voice-… --name "You"</code>. Ten minutes of audio is about ten minutes on an A100. Then <code>finetune.py say</code> renders any sentence in your voice.</span></div></li>
   </ol>
   <button class="btn" id="start">Start a new voice <kbd>Enter</kbd></button>
   <div id="err"></div>
-  <p class="note">You get a link like <code>/v/8f3a19c2/</code>. That link is the voice. Bookmark it to come back; anyone who has it can add to it or hear it. Use Chrome or Edge for the word-by-word highlighting. Nothing else is stored about you.</p>
-  <div id="gate" hidden></div>
+  <p class="note">You get a link like <code>/v/8f3a19c2/</code>. That link is the voice: bookmark it to come back, and anyone who has it can add to it or download it. Use Chrome or Edge for the word-by-word highlighting. Nothing else is stored about you.</p>
 </main>
 <footer>
-  <a id="repo" href="#" target="_blank" rel="noopener">source and self-host</a>
-  <span>runs on Modal · model by Liquid AI</span>
+  <a id="repo" href="#" target="_blank" rel="noopener">source, steps and finetune.py</a>
+  <span>model: LiquidAI/LFM2.5-Audio-1.5B</span>
 </footer>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
-async function info() {
-  try {
-    const d = await (await fetch('/api/info', { cache: 'no-store' })).json();
-    if (d.repo) $('#repo').href = d.repo;
-    if (d.gated) {
-      $('#gate').hidden = false;
-      $('#gate').textContent = 'Recording is open to everyone. Training runs on my GPU credits, so it asks for an invite code' + (d.contact ? ': ask ' + d.contact + ' for one' : '') + '. Or deploy your own copy from the source link below and skip the code.';
-    }
-  } catch (e) { /* the page still works without it */ }
-}
+fetch('/api/info', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d.repo) $('#repo').href = d.repo; }).catch(() => {});
 async function start() {
   const b = $('#start'); b.disabled = true; $('#err').textContent = '';
   try {
@@ -80,7 +69,6 @@ async function start() {
 }
 $('#start').addEventListener('click', start);
 window.addEventListener('keydown', e => { if (e.key === 'Enter' && !$('#start').disabled) start(); });
-info();
 </script>
 </body>
 </html>

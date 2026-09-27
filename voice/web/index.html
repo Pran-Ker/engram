@@ -815,8 +815,9 @@ function renderTop() {
   if (STUDIO) {
     const ok = m >= MIN_MIN;
     el.train.className = ok ? 'ready' : '';
-    el.train.textContent = ok ? 'Train this voice →' : 'Train · ' + m.toFixed(1) + ' / ' + MIN_MIN + ' min';
-    el.train.title = ok ? 'enough audio: fine-tune the model on it' : 'unlocks at ' + MIN_MIN + ' min of kept audio';
+    el.train.hidden = false;
+    el.train.textContent = ok ? 'Download & train →' : 'Train · ' + m.toFixed(1) + ' / ' + MIN_MIN + ' min';
+    el.train.title = ok ? 'enough audio: download the dataset and fine-tune' : 'worth training at ' + MIN_MIN + ' min of kept audio; download any time';
   }
   el.mic.textContent = A.ready ? A.micName : (A.micName || 'mic —');
   el.mic.title = A.micName;

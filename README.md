@@ -146,7 +146,7 @@ To add a person, follow [Adding an engram](engram/docs/adding-an-engram.md). To 
 ```
 engram/       The app. server/ is the Hono API, web/ is the stage, engrams/<slug>/ is one person,
               pipelines/video/ builds the face, docs/ holds the API reference and pipeline docs.
-voice/        Voice Studio: record in the browser, fine-tune LFM2.5-Audio on Modal, hear yourself. Also the stage's TTS service.
+voice/        Voice Studio: browser recorder on Railway, dataset export, finetune.py for any GPU. Also the stage's Modal TTS.
 dashboard/    Direct-mode front door: Nimble research on a name, FLUX 3 talking clip, one click to the stage.
 hackathon/    Sponsor smoke test (npm run check), submission copy, and the day's notes.
 docs/img/     Media for this page.
@@ -158,5 +158,5 @@ docs/img/     Media for this page.
 - [Adding an engram](engram/docs/adding-an-engram.md): the folder contract, recording a voice, and building a face.
 - [API reference](engram/docs/api.md): every route with request and response shapes.
 - [Video pipeline](engram/docs/video-pipeline.md) and [voice pipeline](engram/docs/voice-pipeline.md): how the face and the voice are made.
-- [Voice Studio](voice/README.md): the hosted recorder and trainer anyone can use, and how to host your own.
+- [Voice Studio](voice/README.md): the hosted recorder, the dataset it exports, and the six steps to fine-tune Liquid's audio model on it.
 - [Hackathon notes](hackathon/NOTES.md): sponsor setup, keys, judging criteria.

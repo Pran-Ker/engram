@@ -15,6 +15,7 @@ import json
 import re
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 MIN_S, MAX_S = 1.0, 14.0
@@ -38,14 +39,12 @@ def clean_text(t: str) -> str:
 
 
 def convert(src: Path, dst: Path) -> float:
-    import soundfile as sf
-
     dst.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-af", FILTER,
            "-ar", str(TARGET_RATE), "-ac", "1", "-sample_fmt", "s16", str(dst)]
     subprocess.run(cmd, check=True)
-    info = sf.info(dst)
-    return info.frames / info.samplerate
+    with wave.open(str(dst)) as w:  # stdlib: the hosted image has no soundfile
+        return w.getnframes() / w.getframerate()
 
 
 def verdict_for(minutes: float) -> str:
@@ -75,7 +74,12 @@ def prepare(raw: Path, out: Path, val_fraction: float = VAL_FRACTION) -> dict:
         if not src.exists():
             dropped.append((fname, "missing wav"))
             continue
-        dur = convert(src, out / fname)
+        try:
+            dur = convert(src, out / fname)
+        except subprocess.CalledProcessError as e:
+            dropped.append((fname, f"ffmpeg failed ({e.returncode})"))
+            (out / fname).unlink(missing_ok=True)
+            continue
         if not (MIN_S <= dur <= MAX_S):
             dropped.append((fname, f"{dur:.1f}s outside {MIN_S}-{MAX_S}s"))
             (out / fname).unlink()

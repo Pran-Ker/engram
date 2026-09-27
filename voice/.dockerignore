@@ -1,0 +1,9 @@
+data/
+samples/
+checkpoints/
+.venv/
+__pycache__/
+*.pyc
+web/qa/
+*.wav
+.tts-url

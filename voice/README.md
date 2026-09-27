@@ -1,109 +1,99 @@
 # Voice Studio
 
-Record your voice in the browser, fine-tune Liquid's `LFM2.5-Audio-1.5B` on it, and hear yourself say anything. One Modal app, one command to host.
+Record a dataset of your voice in the browser, download it, and fine-tune Liquid's `LFM2.5-Audio-1.5B` on it with one script on any GPU. Then type anything and hear it back as you.
 
-Hosted copy: **https://hebbarpran--voice-studio.modal.run**. Recording is open to anyone. Training runs on my GPU credits, so it asks for an invite code (DM [@Pran_Ker](https://x.com/Pran_Ker)), or host your own in three commands below and skip the code.
+Hosted recorder: **https://voice-studio-production-f01a.up.railway.app**. Open to anyone; recording and the download are free. Training is your own GPU and your own bill, which is why nothing here needs an account or a code.
 
 ```mermaid
 flowchart LR
-  rec["Recorder<br/>web/index.html<br/>Space · read · Enter"] -->|"48 kHz wavs + manifest"| vol[("voice-data volume<br/>/data/&lt;slug&gt;/raw")]
-  vol --> prep["prepare.py (CPU)<br/>trim · loudnorm · 24 kHz · split"]
-  prep --> tok["preprocess (L4)<br/>Mimi audio tokens"]
-  tok --> ft["train (A100-80GB)<br/>full fine-tune, ~300 steps"]
-  ft --> ck[("voice-ckpt volume<br/>/ckpt/&lt;slug&gt;/final")]
-  ck --> synth["synth (L4)<br/>4 samples"]
-  ck --> say["Speaker (L4, warm 5 min)<br/>Say anything"]
-  synth & say --> page["Studio page<br/>web/studio.html"]
+  rec["Recorder on Railway<br/>web/index.html · web/server.py<br/>Space · read · Enter"] -->|"48 kHz takes + manifest"| vol[("/data/&lt;slug&gt;/raw<br/>Railway volume")]
+  vol -->|"Download dataset"| zip["voice-&lt;slug&gt;.zip<br/>prepare.py: trim · loudnorm · 24 kHz<br/>clean/*.wav + manifest.jsonl + finetune.py"]
+  zip -->|"any CUDA machine"| ft["finetune.py train<br/>tokenize (Mimi) → Trainer, ~300 steps → final/ + samples/"]
+  ft --> say["finetune.py say<br/>--text '…' → wav"]
 ```
 
-**Figure 1.** Everything to the right of the recorder is `studio.py`'s `pipeline` function chaining the stages already in `modal_app.py`. The browser only ever talks to the `web` function.
+**Figure 1.** The hosted part is only the recorder and the export. Everything that needs a GPU runs where you run it.
 
-## How it works for the person recording
+## The steps, as you would post them
 
-1. Open the studio, press **Start a new voice**. You land on `/v/<slug>/`. That link is the voice: bookmark it, share it, or lose it.
-2. Read sentences. Space records, the words light up as Chrome hears them, the take stops on its own, Enter keeps it. The top strip counts minutes. Training unlocks at 10 minutes; 30 sounds like you.
-3. Press **Train this voice**. Give it a name (it becomes the prompt `Perform TTS. Use <Name>'s voice.`), and the invite code if the host set one. The run page shows the phase: clean audio, tokenize, fine-tune, first samples. Ten to twenty minutes, all on Modal. You can close the tab.
-4. Four samples appear. Type a sentence, press **Say it**. The first one wakes a GPU and takes about a minute; after that, a few seconds.
+1. **Open the recorder, press Start a new voice.** You get a link like `/v/8f3a19c2/`. That link is the voice: bookmark it, share it, come back to it. Use Chrome or Edge so the words light up as you read.
+2. **Read.** Space records, the take stops when you finish the sentence, Enter keeps it and arms the next one. The top strip counts minutes. Ten minutes is the practical minimum; thirty sounds like you. Quiet room, same mic, natural pace, read exactly what is shown.
+3. **Download.** Press Download & train, give the voice a name, press Download dataset. The zip holds your clips cleaned to 24 kHz, a `manifest.jsonl` with each clip's text, and `finetune.py`.
+4. **Get a GPU.** A full fine-tune of the 1.5B model wants about 40 GB of GPU memory at batch 16: an A100-80GB or H100 on any cloud. A 24 GB card works with `--batch 4`. Ten minutes of audio is about ten minutes on an A100.
+5. **Train.**
+   ```bash
+   pip install "liquid-audio==1.3.0" soundfile
+   unzip voice-8f3a19c2.zip
+   python finetune.py train --data voice-8f3a19c2 --name "Prannay"
+   ```
+   The script tokenizes the clips into Mimi audio tokens, fine-tunes with Liquid's `Trainer`, writes `ckpt/Prannay/final/` and four sample wavs in `ckpt/Prannay/samples/`.
+6. **Say anything.**
+   ```bash
+   python finetune.py say --ckpt "ckpt/Prannay/final" --text "Hey, this is Prannay. It worked."
+   ```
 
-The prompts are Paul Graham's *How to Do Great Work* split into 733 sentences. Read exactly what is shown, at a natural pace, in a quiet room, same mic throughout.
+Sounds off? Record more at the same link and re-download, or add `--epochs 20`. Under ten minutes of audio the voice is recognisable but rough.
 
-## Host your own
+## How the fine-tune works
 
-You need `uv` and a [Modal](https://modal.com) account (the free tier's monthly credits cover several runs).
+Each training example is (`Perform TTS. Use <Name>'s voice.`, sentence) → Mimi audio tokens (8 codebooks, 12.5 frames/s) of you saying that sentence. There is no zero-shot cloning in this model, so the name in the prompt is what the fine-tune teaches it to honor. The full model is trained with `liquid_audio.trainer.Trainer`: backbone, audio decoder, encoder and text embedder; the vocoder stays frozen. Learning rate 5e-5, context 320 tokens, 10 % warmup. `finetune.plan` picks batch 4/8/16 by dataset size and enough epochs (8 to 30) to reach about 300 optimizer steps, because a first recording is short.
+
+Measured on Sept 25, 2026: generation is one autoregressive step per 80 ms frame and runs at about real time on an L4, so a ten-word sentence takes three to four seconds once the model is loaded.
+
+## Host the recorder yourself
+
+`Dockerfile` is the whole thing: Python 3.12 slim plus ffmpeg, no other dependencies. Any Docker host works; on Railway:
 
 ```bash
-uv sync
-uv run modal setup        # once: log in
-make studio               # deploys studio.py and prints the URL
+railway init -n voice-studio
+railway up -s voice-studio --ci
+railway domain -s voice-studio
 ```
 
-Settings come from the shell that runs `make studio`, so `export` them first (or put them in `~/.local/secrets`):
+Then attach a volume at `/data` (dashboard, or the `volumeCreate` GraphQL mutation; the CLI's `volume add` currently panics on a fresh service). Every voice lives under `/data/<slug>/`: `raw/` takes, `clean/` the last export, `voice-<slug>.zip`. Without a volume the recordings vanish on the next deploy. `/health` reports `persistent: true` when the mount is there.
 
 | Variable | Effect |
 |---|---|
-| `VOICE_STUDIO_CODES` | Comma-separated invite codes. When set, Train asks for one. Unset means anyone with a link can train on your account. |
-| `VOICE_STUDIO_ADMIN` | One extra code that may also start smoke runs (`?max_steps=3` on the train page) and skip the minimum minutes. |
-| `VOICE_STUDIO_MIN_MINUTES` | Minutes of kept audio before Train unlocks (10). |
-| `VOICE_STUDIO_TARGET_MINUTES` | The goal the recorder shows (30). |
-| `VOICE_STUDIO_CONTACT` | Who to ask for a code, shown on the pages. |
+| `VOICE_DATA_DIR` | Where voices live (`/data` in the image). Unset means single-user local mode (`make web`). |
+| `VOICE_MIN_MINUTES` | When the recorder's Train link turns orange (10). |
+| `VOICE_TARGET_MINUTES` | The goal the recorder shows (30). |
+| `VOICE_CONTACT` | A handle to show on the pages. |
+| `VOICE_REPO` | Source link in the footer. |
 
-`make studio-dev` runs it with live reload, `make studio-url` prints the URL again, `make studio-status` lists the voices on the volumes and whether each has a finished model.
+Locally: `make web-hosted` runs the same multi-voice server at `http://127.0.0.1:4300` with `data/voices/` as the data dir; `make web` is the one-voice mode the CLI pipeline below uses.
 
-Cost, from Modal list prices: a run on 10 to 30 minutes of audio is 5 to 15 minutes of A100-80GB plus a few minutes of L4, roughly $0.50 to $1.00. The **Say it** GPU scales to zero after five idle minutes. Nothing stays warm.
-
-## What is stored where
+## What is in the zip
 
 ```
-voice-data  /data/<slug>/raw/         p####.wav, manifest.jsonl, skipped.json   what the recorder writes
-            /data/<slug>/clean/       24 kHz clips + manifest                   prepare.py, inside the pipeline
-            /data/<slug>/voice.json   {slug, name, created}
-            /data/<slug>/status.json  phase log the run page polls
-voice-ckpt  /ckpt/<slug>/final/       the fine-tuned model (loads with from_pretrained)
-            /ckpt/<slug>/samples/     the four wavs
-voice-hf-cache /hf                    base model snapshot, downloaded once
+voice-<slug>/README.txt          the stats and the two commands
+voice-<slug>/clean/manifest.jsonl {"file","text","duration_s","source","split"} per clip; 5 % val
+voice-<slug>/clean/p0000.wav      24 kHz mono 16-bit, silence trimmed, loudness-normalized, 1-14 s
+voice-<slug>/finetune.py          the training script
 ```
-
-A slug is eight hex characters from `secrets.token_hex`. There are no accounts: the link is the key, so treat it like one. To delete a voice, remove `/data/<slug>` and `/ckpt/<slug>` with `modal volume rm`.
-
-## Training details
-
-Each example is (`Perform TTS. Use <Name>'s voice.`, sentence) → Mimi audio tokens (8 codebooks, 12.5 frames/s) of you saying it. The full model is fine-tuned with `liquid_audio.trainer.Trainer`: backbone, audio decoder, encoder and text embedder; the vocoder stays frozen. Learning rate 5e-5, context 320 tokens, 10 % warmup. `studio.plan` picks batch 4/8/16 by dataset size and enough epochs (8 to 30) to reach about 300 optimizer steps, because a first-time recording is short.
-
-Measured on Sept 25, 2026: generation is one autoregressive step per 80 ms frame and runs at about real time on an L4, so a ten-word sentence takes three to four seconds after the model is loaded.
 
 ## Layout
 
 ```
-studio.py             the hosted app: web (FastAPI) + pipeline + Speaker; includes modal_app's functions
-modal_app.py          Modal stages: check / preprocess / train / synth / all   (also `make all` from the CLI)
-prepare.py            raw -> clean: ffmpeg trim, loudnorm, 24 kHz, val split, stats
-takes.py              take storage (wav + manifest + skipped) shared by web/server.py and studio.py
-serve.py              streaming TTS endpoint used by the Engram stage (../engram)
+web/server.py         the server: local one-voice mode or hosted multi-voice mode (VOICE_DATA_DIR); stdlib only
 web/index.html        the recorder (one file, Chrome for word highlighting)
-web/studio.html       train / run / listen page
 web/landing.html      start page
-web/server.py         the same recorder against a local folder (make web), stdlib only
+web/train.html        download + the training steps with your slug and name filled in
 web/qa/e2e.mjs        Playwright e2e with a fake mic: node web/qa/e2e.mjs  (server on :4311)
+takes.py              take storage: wav + manifest + skipped
+prepare.py            raw -> clean: ffmpeg trim, loudnorm, 24 kHz, val split, stats
+finetune.py           train / say on any CUDA machine (liquid-audio Trainer)
+Dockerfile            the hosted recorder
+prompts/sentences.txt what to read (Paul Graham, How to Do Great Work, 733 sentences)
 scripts/              terminal recorder, whisper splitter, prepare CLI, smoke data
-prompts/sentences.txt what to read
+modal_app.py, serve.py  the Engram stage's own training + streaming TTS on Modal (../engram); not part of the tool
 ```
 
-## The CLI path (no browser hosting)
+## The Engram stage path
 
-The same pipeline from the terminal, on your laptop plus your Modal account:
-
-```bash
-make web                     # recorder at http://127.0.0.1:4300, writes data/raw
-make prepare                 # data/raw -> data/clean, prints a readiness verdict
-make upload && make all      # Modal: preprocess -> train -> synth, run prannay-v1
-make synth TEXT="..."        # more samples -> samples/<run>/
-make deploy                  # serve.py: streaming /tts for the Engram stage; make tts-stop when done
-```
-
-`make smoke` runs the whole Modal pipeline on synthetic tones for a few cents. Other inputs: `make record-free` then `make transcribe` splits a free-talk take with local Whisper.
+The talking-portrait demo in `../engram` uses the same recordings but trains and serves on Modal so the stage can stream sentences: `make web`, `make prepare`, `make upload && make all`, `make deploy` (see `modal_app.py`, `serve.py`, and `../engram/docs/voice-pipeline.md`). `make smoke` runs that pipeline on synthetic tones for a few cents.
 
 ## Sources
 
 - https://github.com/Liquid4All/liquid-audio (Trainer, LFM2AudioChatMapper, Jenny TTS example)
 - https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B
-- https://github.com/Liquid4All/cookbook/tree/main/examples/voice-assistant (Modal A100 fine-tune reference)
+- https://github.com/Liquid4All/cookbook/tree/main/examples/voice-assistant (A100 fine-tune reference)

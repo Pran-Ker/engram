@@ -6,15 +6,14 @@ RUN     ?= prannay-v1
 EPOCHS  ?= 8
 TEXT    ?= Hey, this is Prannay. I'm testing whether the fine-tuned model actually sounds like me.
 
-# The shell that runs `make studio` decides which Modal workspace and settings the studio gets:
-#   MODAL_TOKEN_ID/SECRET or the active `modal profile`; VOICE_STUDIO_CODES, VOICE_STUDIO_ADMIN, VOICE_STUDIO_CONTACT (see studio.py)
 .DEFAULT_GOAL := help
 help:
-	@echo "--- Voice Studio (hosted: record + train + listen in the browser) ---"
-	@echo "make studio       deploy studio.py to Modal and print its URL"
-	@echo "make studio-dev   run studio.py with live reload (modal serve)"
-	@echo "make studio-url   print the deployed studio URL"
-	@echo "make studio-status list voices on the volumes and their training state"
+	@echo "--- Voice Studio (the hosted recorder on Railway: record, download the dataset, train anywhere) ---"
+	@echo "make web-hosted   run the multi-voice recorder locally at http://127.0.0.1:4300 (VOICE_DATA_DIR=data/voices)"
+	@echo "make railway      deploy web/server.py + Dockerfile to the linked Railway service"
+	@echo "make railway-url  print the public URL"
+	@echo "--- Fine-tune (any CUDA machine) ---"
+	@echo "make finetune DATA=voice-xxxx NAME=\"Your Name\"   python finetune.py train ..."
 	@echo "--- CLI pipeline (record locally, train from the terminal) ---"
 	@echo "make setup        install local deps (uv)"
 	@echo "make devices      list microphones"
@@ -87,20 +86,20 @@ clean-smoke:
 
 .PHONY: clean-smoke
 
-studio:
-	uv run modal deploy studio.py
-	uv run python studio.py url
+web-hosted:
+	VOICE_DATA_DIR=data/voices uv run python web/server.py
 
-studio-dev:
-	uv run modal serve studio.py
+railway:
+	railway up -s voice-studio --ci
+	railway domain -s voice-studio
 
-studio-url:
-	uv run python studio.py url
+railway-url:
+	railway domain -s voice-studio
 
-studio-status:
-	uv run python studio.py status
+finetune:  # DATA=<unzipped dataset folder> NAME="<name>"
+	uv run python finetune.py train --data "$(DATA)" --name "$(NAME)"
 
-.PHONY: studio studio-dev studio-url studio-status
+.PHONY: web-hosted railway railway-url finetune
 
 deploy:
 	uv run modal deploy serve.py
