@@ -18,7 +18,7 @@
     "@nimble-way/nimble-js": "^1.5.0",
     "@rawtree/sdk": "^0.2.1",
     "gray-matter": "^4.0.3",
-    "hono": "^4.6.0",
+    "hono": "^4.13.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0"
